@@ -5,9 +5,7 @@ services:
       MONGO_URL: ${MONGO_URL}
       PORT: ${CATALOGO_PORT:-8084}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      SERVE_DOCS: "1"          # quieres swagger
-    volumes:
-      - ../docs:/app/docs:ro   # <--- añade esto
+      SERVE_DOCS: "1"     # <- si quieres swagger en /docs
     ports:
       - "8084:8084"
     healthcheck:
