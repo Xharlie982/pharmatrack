@@ -4,10 +4,11 @@ info:
   version: "1.0.0"
 
 servers:
-  - url: http://{host}:{port}
+  - url: http://{host}:{port}{basePath}
     variables:
       host: { default: localhost }
       port: { default: "8084" }
+      basePath: { default: "/catalogo" }
 
 tags:
   - name: Health

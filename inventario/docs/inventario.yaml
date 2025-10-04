@@ -1,18 +1,24 @@
 openapi: 3.0.3
 info:
-  title: Inventario & Sucursales API
+  title: Inventario API
   version: "1.0.0"
+
 servers:
-  - url: http://{host}:{port}
+  - url: http://{host}:{port}{basePath}
     variables:
-      host:
-        default: localhost
-        enum: [localhost, alb_dns_name]
-      port:
-        default: "8082"
+      host: { default: localhost }
+      port: { default: "8085" }
+      basePath: { default: "/inventario" }
+
+tags:
+  - name: Health
+  - name: Stocks
+  - name: Movimientos
+
 paths:
   /healthz:
     get:
+      tags: [Health]
       summary: Health check
       responses:
         "200":
@@ -21,100 +27,170 @@ paths:
             application/json:
               schema:
                 type: object
-                properties: { status: { type: string, example: ok } }
-  /sucursales:
+                properties:
+                  status: { type: string, example: ok }
+
+  /stocks:
     get:
-      summary: Listar sucursales (filtro opcional por distrito)
-      parameters: [ { in: query, name: distrito, schema: { type: string } } ]
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Sucursal" }
-  /stock:
-    get:
-      summary: Consultar stock por filtros (producto, sucursal, distrito)
+      tags: [Stocks]
+      summary: Listar stock (filtrable y paginado)
       parameters:
-        - { in: query, name: id_producto, schema: { type: string } }
-        - { in: query, name: id_sucursal, schema: { type: integer } }
-        - { in: query, name: distrito, schema: { type: string } }
+        - in: query
+          name: producto_id
+          schema: { type: string }
+          description: ID canónico del producto (Catálogo).
+        - in: query
+          name: sucursal_id
+          schema: { type: integer }
+          description: ID de sucursal.
+        - in: query
+          name: tamano_pagina
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+          description: Cantidad de resultados por página.
+        - in: query
+          name: pagina
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Número de página (1 = primera página).
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Stock" }
-    patch:
-      summary: Ajustar stock (admin)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              required: [id_sucursal, id_producto, delta]
-              type: object
-              properties:
-                id_sucursal: { type: integer }
-                id_producto: { type: string }
-                delta: { type: integer, description: "positivo = ENTRADA; negativo = EGRESO" }
-                motivo: { type: string }
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockItem" }
+
+  /productos/{id}/stock:
+    get:
+      tags: [Stocks]
+      summary: Stock agregado por producto (todas las sucursales)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: ID del producto (Catálogo).
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Stock" }
-  /movimientos:
-    post:
-      summary: Registrar ENTRADA/EGRESO
+              schema:
+                type: object
+                properties:
+                  producto_id: { type: string }
+                  total_unidades: { type: integer }
+                  por_sucursal:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockItem" }
+        "404": { description: No existe }
+
+  /productos/{id}/sucursales/{sucursal_id}:
+    put:
+      tags: [Stocks]
+      summary: Ajuste de stock (positivo o negativo) para un producto en una sucursal
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: sucursal_id
+          required: true
+          schema: { type: integer }
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              required: [id_sucursal, id_producto, tipo_movimiento, cantidad]
               type: object
+              required: [ajuste]
               properties:
-                id_sucursal: { type: integer }
-                id_producto: { type: string }
-                tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+                ajuste: { type: integer, description: "Puede ser negativo." }
+                motivo: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockItem" }
+        "404": { description: No existe }
+
+  /movimientos:
+    get:
+      tags: [Movimientos]
+      summary: Listar movimientos de stock (paginado)
+      parameters:
+        - in: query
+          name: producto_id
+          schema: { type: string }
+        - in: query
+          name: sucursal_id
+          schema: { type: integer }
+        - in: query
+          name: tamano_pagina
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+        - in: query
+          name: pagina
+          schema: { type: integer, default: 1, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Movimiento" }
+
+    post:
+      tags: [Movimientos]
+      summary: Crear movimiento (IN/OUT) y aplicar al stock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [producto_id, sucursal_id, tipo, cantidad]
+              properties:
+                producto_id: { type: string }
+                sucursal_id: { type: integer }
+                tipo: { type: string, enum: [IN, OUT] }
                 cantidad: { type: integer, minimum: 1 }
-                motivo: { type: string }
+                motivo: { type: string, nullable: true }
       responses:
         "201":
           description: Creado
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Movimiento" }
+
 components:
   schemas:
-    Sucursal:
+    StockItem:
       type: object
       properties:
-        id_sucursal: { type: integer }
-        nombre: { type: string }
-        distrito: { type: string }
-        direccion: { type: string }
-    Stock:
-      type: object
-      properties:
-        id_sucursal: { type: integer }
-        id_producto: { type: string }
-        stock_actual: { type: integer }
-        umbral_reposicion: { type: integer }
-        fecha_actualizacion: { type: string, format: date-time }
+        producto_id: { type: string }
+        sucursal_id: { type: integer }
+        sucursal_nombre: { type: string }
+        unidades: { type: integer }
+        actualizado_en: { type: string, format: date-time }
+
     Movimiento:
       type: object
       properties:
         id: { type: integer }
-        id_sucursal: { type: integer }
-        id_producto: { type: string }
-        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+        producto_id: { type: string }
+        sucursal_id: { type: integer }
+        tipo: { type: string, enum: [IN, OUT] }
         cantidad: { type: integer }
-        fecha_movimiento: { type: string, format: date-time }
-        motivo: { type: string }
+        motivo: { type: string, nullable: true }
+        creado_en: { type: string, format: date-time }
