@@ -2,11 +2,13 @@ openapi: 3.0.3
 info:
   title: Catálogo de Productos API
   version: "1.0.0"
+
 servers:
-  - url: http://{host}:{port}
+  - url: http://{host}:{port}{basePath}
     variables:
-      host: { default: localhost }
-      port: { default: "8084" }
+      host:  { default: localhost }
+      port:  { default: "8084" }
+      basePath: { default: "" }  # p.ej. "/catalogo" si estás detrás de un ALB
 
 tags:
   - name: Health
@@ -24,19 +26,39 @@ paths:
             application/json:
               schema:
                 type: object
-                properties: { status: { type: string, example: ok } }
+                properties:
+                  status:
+                    type: string
+                    example: ok
 
   /productos:
     get:
       tags: [Productos]
-      summary: Buscar productos (texto/ATC/Rx/habilitado)
+      summary: Buscar productos (texto/código ATC/receta/habilitado)
       parameters:
-        - { in: query, name: texto, schema: { type: string }, description: "Full-text (nombre, keywords)" }
-        - { in: query, name: atc, schema: { type: string } }
-        - { in: query, name: rx, schema: { type: boolean } }
-        - { in: query, name: habilitado, schema: { type: boolean } }
-        - { in: query, name: limit, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
-        - { in: query, name: skip, schema: { type: integer, default: 0, minimum: 0 } }
+        - in: query
+          name: busqueda
+          description: Búsqueda full-text (nombre y keywords)
+          schema: { type: string }
+        - in: query
+          name: codigo_atc
+          schema: { type: string }
+        - in: query
+          name: requiere_receta
+          description: Filtra por si requiere receta (true/false)
+          schema: { type: boolean }
+        - in: query
+          name: habilitado
+          description: Filtra por habilitado (true/false)
+          schema: { type: boolean }
+        - in: query
+          name: tamano_pagina
+          description: Cantidad de resultados por página
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+        - in: query
+          name: pagina
+          description: Número de página (1 = primera página)
+          schema: { type: integer, default: 1, minimum: 1 }
       responses:
         "200":
           description: OK
@@ -45,6 +67,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Producto" }
+
     post:
       tags: [Productos]
       summary: Crear producto
@@ -64,27 +87,54 @@ paths:
     get:
       tags: [Productos]
       summary: Obtener por ID canónico
-      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Producto" }
         "404": { description: No existe }
+
     put:
       tags: [Productos]
       summary: Upsert por ID canónico
-      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/Producto" } } }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Producto" }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Producto" }
 
-  /productos/codigos-barras/{ean}:
+  /productos/codigos-barras/{codigo_barras}:
     get:
       tags: [Productos]
-      summary: Buscar por código de barras (variantes)
-      parameters: [ { in: path, name: ean, required: true, schema: { type: string } } ]
+      summary: Buscar producto por código de barras (en sus variantes)
+      parameters:
+        - in: path
+          name: codigo_barras
+          required: true
+          schema: { type: string }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Producto" }
         "404": { description: No existe }
 
 components:

@@ -51,6 +51,20 @@ mongoose
 // --------- Router con prefijo ----------
 const api = express.Router();
 
+// Landing DENTRO del prefijo (p. ej. /catalogo/)
+api.get("/", (req, res) => {
+  if (SERVE_DOCS && req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect(`${BASE_PATH}/docs`);
+  }
+  return res.json({
+    service: "catalogo",
+    base_path: BASE_PATH || "/",
+    health: `${BASE_PATH || ""}/healthz`,
+    docs: SERVE_DOCS ? `${BASE_PATH || ""}/docs` : null,
+    message: "Bienvenido al microservicio Catálogo"
+  });
+});
+
 // Health
 api.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 
@@ -101,15 +115,46 @@ const Producto = mongoose.model("Producto", ProductoSchema);
 // --------- Rutas ----------
 api.get("/productos", async (req, res, next) => {
   try {
-    const { texto, atc, rx, habilitado, limit = 50, skip = 0 } = req.query;
-    const q = {};
-    if (texto) q.$text = { $search: texto };
-    if (atc) q.codigo_atc = atc;
-    if (typeof rx !== "undefined") q.requiere_receta = rx === "true";
-    if (typeof habilitado !== "undefined") q.habilitado = habilitado === "true";
+    // Nuevos nombres claros
+    const {
+      busqueda,
+      codigo_atc,
+      requiere_receta,
+      habilitado,
+      tamano_pagina,
+      pagina
+    } = req.query;
 
-    const docs = await Producto.find(q).limit(Number(limit)).skip(Number(skip)).lean();
-    res.json(docs);
+    // Compatibilidad hacia atrás (si alguien sigue llamando con los viejos)
+    const legacy = req.query;
+    const _busqueda        = busqueda ?? legacy.texto ?? null;
+    const _codigo_atc      = codigo_atc ?? legacy.atc ?? null;
+    const _requiere_receta = (typeof requiere_receta !== "undefined")
+                              ? requiere_receta
+                              : legacy.rx;
+    const _habilitado      = (typeof habilitado !== "undefined")
+                              ? habilitado
+                              : legacy.habilitado;
+    const _tamano_pagina   = Number(tamano_pagina ?? legacy.limit ?? 50);
+    const _pagina          = Number(pagina ?? (legacy.skip ? (Number(legacy.skip) / _tamano_pagina) + 1 : 1));
+
+    const q = {};
+    if (_busqueda) q.$text = { $search: String(_busqueda) };
+    if (_codigo_atc) q.codigo_atc = String(_codigo_atc);
+    if (typeof _requiere_receta !== "undefined") q.requiere_receta = String(_requiere_receta) === "true";
+    if (typeof _habilitado !== "undefined") q.habilitado = String(_habilitado) === "true";
+
+    // paginación: pagina (1-based) -> skip
+    const limit = Math.min(Math.max(_tamano_pagina, 1), 200);
+    const page  = Math.max(_pagina, 1);
+    const skip  = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      Producto.find(q).limit(limit).skip(skip).lean(),
+      Producto.countDocuments(q)
+    ]);
+
+    res.json({ total, pagina: page, tamano_pagina: limit, items });
   } catch (e) {
     next(e);
   }
@@ -147,9 +192,11 @@ api.put("/productos/:id", async (req, res, next) => {
   }
 });
 
-api.get("/productos/codigos-barras/:ean", async (req, res, next) => {
+// Path con nombre claro y compatibilidad con /ean
+api.get("/productos/codigos-barras/:codigo_barras", async (req, res, next) => {
   try {
-    const doc = await Producto.findOne({ "variantes.codigo_barras": req.params.ean }).lean();
+    const codigo = req.params.codigo_barras ?? req.params.ean;
+    const doc = await Producto.findOne({ "variantes.codigo_barras": codigo }).lean();
     if (!doc) return res.status(404).json({ detail: "No existe" });
     res.json(doc);
   } catch (e) {
@@ -157,7 +204,7 @@ api.get("/productos/codigos-barras/:ean", async (req, res, next) => {
   }
 });
 
-// Swagger opcional dentro del prefijo (quedará en /<base>/docs)
+// Swagger opcional dentro del prefijo (queda en /<base>/docs)
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
   api.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
@@ -168,6 +215,22 @@ api.use((_req, res) => res.status(404).json({ detail: "Not found" }));
 
 // Monta el subrouter en el BASE_PATH (o raíz si no hay)
 app.use(BASE_PATH || "/", api);
+
+// Landing FUERA del prefijo (IP:PUERTO/) para pruebas sin ALB
+app.get("/", (req, res) => {
+  const info = {
+    service: "catalogo",
+    base_path: BASE_PATH || "/",
+    health: `${BASE_PATH || ""}/healthz`,
+    docs: SERVE_DOCS ? `${BASE_PATH || ""}/docs` : null,
+    note: "Este endpoint existe solo para pruebas directas por IP/puerto."
+  };
+  // Si el cliente quiere HTML, redirige a docs
+  if (SERVE_DOCS && req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect(info.docs || info.health);
+  }
+  return res.json(info);
+});
 
 // Manejo de errores
 app.use((err, _req, res, _next) => {
