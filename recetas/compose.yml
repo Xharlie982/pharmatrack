@@ -6,10 +6,11 @@ services:
       MYSQL_URL: ${MYSQL_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       SERVE_DOCS: "1"
+      BASE_PATH: ${RECETAS_BASE_PATH:-}
     ports:
       - "8083:8083"
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8083/healthz"]
+      test: ["CMD","wget","-qO-","http://localhost:8083${RECETAS_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3

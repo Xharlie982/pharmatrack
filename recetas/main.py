@@ -44,7 +44,9 @@ class Dispensacion(Base):
 Base.metadata.create_all(engine)
 
 # ===== FastAPI + CORS =====
+BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # "/recetas" o ""
 app = FastAPI(title="Recetas & Dispensación API", version="1.0.0")
+
 cors_origins = os.getenv("CORS_ORIGINS", "*")
 origins = [o.strip() for o in cors_origins.split(",")] if cors_origins else ["*"]
 app.add_middleware(
@@ -52,6 +54,26 @@ app.add_middleware(
     allow_origins=origins, allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
+
+# Middleware para “strip” del prefijo cuando el LB no reescribe
+from starlette.middleware.base import BaseHTTPMiddleware
+class StripPrefixMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, prefix: str):
+        super().__init__(app)
+        self.prefix = prefix
+
+    async def dispatch(self, request, call_next):
+        if self.prefix and request.scope.get("path","").startswith(self.prefix):
+            # reescribe path para la app
+            request.scope["path"] = request.scope["path"][len(self.prefix):] or "/"
+        elif self.prefix:
+            # si hay prefijo y no coincide, 404
+            from starlette.responses import JSONResponse
+            return JSONResponse({"detail":"Not found"}, status_code=404)
+        return await call_next(request)
+
+if BASE_PATH:
+    app.add_middleware(StripPrefixMiddleware, prefix=BASE_PATH)
 
 # ===== Schemas =====
 class RecetaCreate(BaseModel):
@@ -134,10 +156,8 @@ def registrar_dispensacion(body: DispensacionCreate):
 # ===== Swagger embebido (docs/recetas.yaml) =====
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-
 if os.getenv("SERVE_DOCS", "1") == "1":
     app.mount("/docs", StaticFiles(directory="docs"), name="docs")
-
     SWAGGER_HTML = """
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>Swagger</title>
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">

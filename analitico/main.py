@@ -1,73 +1,71 @@
-﻿import os
-import time
+﻿import os, time
 from typing import List, Dict, Any, Optional
-
 import boto3
 from botocore.config import Config
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-# ========= Config =========
+AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 ATHENA_DB: str = os.getenv("ATHENA_DB", "pharmatrack_raw")
 ATHENA_OUTPUT: str = os.getenv("ATHENA_OUTPUT", "s3://pharmatrack-query-results/")
-AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+BASE_PATH = (os.getenv("BASE_PATH","")).rstrip("/")
 
 _cors = os.getenv("CORS_ORIGINS", "*")
 ALLOW_ORIGINS: List[str] = [o.strip() for o in _cors.split(",")] if _cors else ["*"]
 
-athena = boto3.client(
-    "athena", region_name=AWS_REGION,
-    config=Config(retries={"max_attempts": 5, "mode": "adaptive"})
-)
-
+athena = boto3.client("athena", region_name=AWS_REGION, config=Config(retries={"max_attempts": 5, "mode": "adaptive"}))
 app = FastAPI(title="API Analítica (Athena)", version="1.0.0")
+
+from starlette.middleware.base import BaseHTTPMiddleware
+class StripPrefixMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, prefix: str):
+        super().__init__(app); self.prefix = prefix
+    async def dispatch(self, request, call_next):
+        if self.prefix and request.scope.get("path","").startswith(self.prefix):
+            request.scope["path"] = request.scope["path"][len(self.prefix):] or "/"
+        elif self.prefix:
+            from starlette.responses import JSONResponse
+            return JSONResponse({"detail":"Not found"}, status_code=404)
+        return await call_next(request)
+
+if BASE_PATH:
+    app.add_middleware(StripPrefixMiddleware, prefix=BASE_PATH)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOW_ORIGINS, allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ========= Ejecutar SQL =========
 def run_query(sql: str) -> List[Dict[str, Any]]:
     qid = athena.start_query_execution(
         QueryString=sql,
         QueryExecutionContext={"Database": ATHENA_DB},
         ResultConfiguration={"OutputLocation": ATHENA_OUTPUT},
     )["QueryExecutionId"]
-
     while True:
         status = athena.get_query_execution(QueryExecutionId=qid)["QueryExecution"]["Status"]["State"]
-        if status in ("SUCCEEDED","FAILED","CANCELLED"):
-            break
+        if status in ("SUCCEEDED","FAILED","CANCELLED"): break
         time.sleep(0.6)
-
     if status != "SUCCEEDED":
         raise HTTPException(status_code=500, detail=f"Athena {status}")
-
     results = athena.get_query_results(QueryExecutionId=qid)
     rows = results["ResultSet"]["Rows"]
     headers = [c["VarCharValue"] for c in rows[0]["Data"]]
     out: List[Dict[str, Any]] = []
-
     def row_to_dict(row) -> Dict[str, Any]:
-        data = row.get("Data", [])
-        obj: Dict[str, Any] = {}
+        data = row.get("Data", []); obj: Dict[str, Any] = {}
         for i,h in enumerate(headers):
             obj[h] = data[i].get("VarCharValue") if i < len(data) else None
         return obj
-
-    for r in rows[1:]:
-        out.append(row_to_dict(r))
-
+    for r in rows[1:]: out.append(row_to_dict(r))
     next_token = results.get("NextToken")
     while next_token:
         results = athena.get_query_results(QueryExecutionId=qid, NextToken=next_token)
-        for r in results["ResultSet"]["Rows"]:
-            out.append(row_to_dict(r))
+        for r in results["ResultSet"]["Rows"]: out.append(row_to_dict(r))
         next_token = results.get("NextToken")
     return out
 
-# ========= Endpoints =========
 @app.get("/kpi/fill-rate")
 def fill_rate(desde: Optional[str]=None, hasta: Optional[str]=None, distrito: Optional[str]=None):
     where=[]
@@ -142,13 +140,10 @@ def cobertura():
 def healthz():
     return {"status":"ok"}
 
-# ===== Swagger embebido (docs/analitico.yaml) =====
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-
 if os.getenv("SERVE_DOCS","1") == "1":
     app.mount("/docs", StaticFiles(directory="docs"), name="docs")
-
     SWAGGER_HTML = """
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>Swagger</title>
     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">

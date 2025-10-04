@@ -1,5 +1,7 @@
 server:
   port: 8082
+  servlet:
+    context-path: ${BASE_PATH:}   # <- soporta /inventario
 
 spring:
   datasource:
@@ -13,17 +15,15 @@ spring:
       hibernate.jdbc.time_zone: UTC
       hibernate.format_sql: true
 
-# CORS configurable (coma-separado). Ej: "https://tu-amplify,http://lb-xxxx.elb.amazonaws.com"
 cors:
   origins: ${CORS_ORIGINS:*}
 
-# Swagger UI: apuntamos al YAML externo (montado) sin moverlo a resources.
 springdoc:
   api-docs:
     enabled: true
+  # Este path es relativo al context-path; no hace falta repetir BASE_PATH.
   swagger-ui:
-    url: ${SPRINGDOC_SWAGGER_UI_URL:/docs/inventario.yaml}
+    url: /docs/inventario.yaml
 
-# Donde está el YAML en el filesystem dentro del contenedor (lo montamos por volume)
 docs:
   dir: ${DOCS_DIR:/app/docs}

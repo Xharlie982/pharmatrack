@@ -14,8 +14,16 @@ const CORS_ORIGINS = (process.env.CORS_ORIGINS || "*")
   .filter(Boolean);
 const SERVE_DOCS = process.env.SERVE_DOCS === "1";
 
+// Prefijo para funcionar detrás del ALB (ej: "/catalogo")
+const RAW_BASE = (process.env.BASE_PATH || "").trim();
+// normaliza: vacío => "", con barra inicial y sin barra final
+const BASE_PATH = RAW_BASE
+  ? (RAW_BASE.startsWith("/") ? RAW_BASE : `/${RAW_BASE}`).replace(/\/+$/, "")
+  : "";
+
 // --------- App base ----------
 const app = express();
+app.set("trust proxy", true);
 
 // CORS
 app.use(
@@ -33,14 +41,18 @@ app.use(morgan("tiny"));
 // --------- Mongo ----------
 mongoose.set("strictQuery", true);
 mongoose
-  .connect(MONGO_URL, {
-    autoIndex: true
-  })
-  .then(() => console.log(`[catalogo] Conectado a Mongo`))
+  .connect(MONGO_URL, { autoIndex: true })
+  .then(() => console.log("[catalogo] Conectado a Mongo"))
   .catch((err) => {
     console.error("[catalogo] Error conectando a Mongo:", err.message);
     process.exit(1);
   });
+
+// --------- Router con prefijo ----------
+const api = express.Router();
+
+// Health
+api.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 
 // --------- Modelos ----------
 const VarianteSchema = new mongoose.Schema(
@@ -55,7 +67,7 @@ const VarianteSchema = new mongoose.Schema(
 
 const ProductoSchema = new mongoose.Schema(
   {
-    _id: { type: String, required: true }, // ID canónico (string)
+    _id: { type: String, required: true },
     nombre: { type: String, required: true },
     codigo_atc: { type: String, default: null },
     requiere_receta: { type: Boolean, default: null },
@@ -68,14 +80,13 @@ const ProductoSchema = new mongoose.Schema(
   { collection: "productos", versionKey: false }
 );
 
-// Índices “ultra necesarios”
+// Índices
 ProductoSchema.index({ nombre: "text", keywords: "text" });
 ProductoSchema.index({ codigo_atc: 1 });
 ProductoSchema.index({ requiere_receta: 1 });
 ProductoSchema.index({ habilitado: 1 });
 ProductoSchema.index({ "variantes.codigo_barras": 1 }, { unique: true, sparse: true });
 
-// Mantén actualizado `actualizado_en`
 ProductoSchema.pre("save", function (next) {
   this.actualizado_en = new Date();
   next();
@@ -88,13 +99,9 @@ ProductoSchema.pre("findOneAndUpdate", function (next) {
 const Producto = mongoose.model("Producto", ProductoSchema);
 
 // --------- Rutas ----------
-app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
-
-// Buscar con filtros
-app.get("/productos", async (req, res, next) => {
+api.get("/productos", async (req, res, next) => {
   try {
     const { texto, atc, rx, habilitado, limit = 50, skip = 0 } = req.query;
-
     const q = {};
     if (texto) q.$text = { $search: texto };
     if (atc) q.codigo_atc = atc;
@@ -108,8 +115,7 @@ app.get("/productos", async (req, res, next) => {
   }
 });
 
-// Crear
-app.post("/productos", async (req, res, next) => {
+api.post("/productos", async (req, res, next) => {
   try {
     const created = await Producto.create(req.body);
     res.status(201).json(created);
@@ -118,8 +124,7 @@ app.post("/productos", async (req, res, next) => {
   }
 });
 
-// Obtener por ID canónico
-app.get("/productos/:id", async (req, res, next) => {
+api.get("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findById(req.params.id).lean();
     if (!doc) return res.status(404).json({ detail: "No existe" });
@@ -129,8 +134,7 @@ app.get("/productos/:id", async (req, res, next) => {
   }
 });
 
-// Upsert por ID
-app.put("/productos/:id", async (req, res, next) => {
+api.put("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findOneAndUpdate(
       { _id: req.params.id },
@@ -143,8 +147,7 @@ app.put("/productos/:id", async (req, res, next) => {
   }
 });
 
-// Buscar por código de barras (en variantes)
-app.get("/productos/codigos-barras/:ean", async (req, res, next) => {
+api.get("/productos/codigos-barras/:ean", async (req, res, next) => {
   try {
     const doc = await Producto.findOne({ "variantes.codigo_barras": req.params.ean }).lean();
     if (!doc) return res.status(404).json({ detail: "No existe" });
@@ -154,17 +157,19 @@ app.get("/productos/codigos-barras/:ean", async (req, res, next) => {
   }
 });
 
-// Swagger opcional
+// Swagger opcional dentro del prefijo (quedará en /<base>/docs)
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
+  api.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
 }
 
-// 404
-app.use((_req, res) => res.status(404).json({ detail: "Not found" }));
+// 404 del subrouter
+api.use((_req, res) => res.status(404).json({ detail: "Not found" }));
+
+// Monta el subrouter en el BASE_PATH (o raíz si no hay)
+app.use(BASE_PATH || "/", api);
 
 // Manejo de errores
-// (devuelve JSON y evita trazas crudas en producción)
 app.use((err, _req, res, _next) => {
   console.error("[catalogo] error:", err.message);
   if (err.name === "MongoServerError" && err.code === 11000) {
@@ -175,5 +180,5 @@ app.use((err, _req, res, _next) => {
 
 // --------- Server ----------
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[catalogo] escuchando en :${PORT}`);
+  console.log(`[catalogo] escuchando en :${PORT} (BASE_PATH="${BASE_PATH || "/"}")`);
 });

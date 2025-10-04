@@ -10,19 +10,15 @@ services:
       PG_USER: ${PG_USER}
       PG_PASSWORD: ${PG_PASSWORD}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-
-      # Swagger sin tocar resources
       DOCS_DIR: /app/docs
       SPRINGDOC_SWAGGER_UI_URL: /docs/inventario.yaml
-
-    # OJO: este path es relativo a la carpeta inventario/ (ejecuta compose desde aquí)
+      BASE_PATH: ${INVENTARIO_BASE_PATH:-}
     volumes:
-      - ../docs:/app/docs:ro
-
+      - ./docs:/app/docs:ro
     ports:
       - "8082:8082"
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8082/healthz"]
+      test: ["CMD","wget","-qO-","http://localhost:8082${INVENTARIO_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3

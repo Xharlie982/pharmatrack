@@ -2,14 +2,18 @@ services:
   catalogo:
     build: .
     environment:
+      # Ajusta a tu string real de conexión en la MV de BD
       MONGO_URL: ${MONGO_URL}
       PORT: ${CATALOGO_PORT:-8084}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      SERVE_DOCS: "1"     # <- si quieres swagger en /docs
+      SERVE_DOCS: "1"
+      # ¡Clave para ALB con ruta /catalogo/*!
+      BASE_PATH: ${CATALOGO_BASE_PATH:-/catalogo}
     ports:
       - "8084:8084"
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8084/healthz"]
+      # Usa el path con prefijo
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/catalogo/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3
