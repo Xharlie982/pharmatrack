@@ -4,11 +4,10 @@ info:
   version: "1.0.0"
 
 servers:
-  - url: http://{host}:{port}{basePath}
+  - url: http://{host}:{port}
     variables:
-      host:  { default: localhost }
-      port:  { default: "8084" }
-      basePath: { default: "" }  # p.ej. "/catalogo" si estás detrás de un ALB
+      host: { default: localhost }
+      port: { default: "8084" }
 
 tags:
   - name: Health
@@ -34,31 +33,32 @@ paths:
   /productos:
     get:
       tags: [Productos]
-      summary: Buscar productos (texto/código ATC/receta/habilitado)
+      summary: Buscar productos (texto/código ATC/receta/disponibilidad)
       parameters:
         - in: query
           name: busqueda
-          description: Búsqueda full-text (nombre y keywords)
           schema: { type: string }
+          description: Nombre del producto, palabras clave o atajos de búsqueda.
         - in: query
           name: codigo_atc
           schema: { type: string }
+          description: Código ATC del producto.
         - in: query
           name: requiere_receta
-          description: Filtra por si requiere receta (true/false)
           schema: { type: boolean }
+          description: Filtra por si necesita receta.
         - in: query
           name: habilitado
-          description: Filtra por habilitado (true/false)
           schema: { type: boolean }
+          description: Filtra por disponibilidad.
         - in: query
           name: tamano_pagina
-          description: Cantidad de resultados por página
           schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+          description: Cantidad de resultados por página.
         - in: query
           name: pagina
-          description: Número de página (1 = primera página)
           schema: { type: integer, default: 1, minimum: 1 }
+          description: Número de página (1 = primera página).
       responses:
         "200":
           description: OK
@@ -66,8 +66,8 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Producto" }
-
+                items:
+                  $ref: "#/components/schemas/Producto"
     post:
       tags: [Productos]
       summary: Crear producto
@@ -75,13 +75,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/Producto" }
+            schema:
+              $ref: "#/components/schemas/Producto"
       responses:
         "201":
           description: Creado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Producto" }
+              schema:
+                $ref: "#/components/schemas/Producto"
 
   /productos/{id}:
     get:
@@ -97,9 +99,10 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Producto" }
-        "404": { description: No existe }
-
+              schema:
+                $ref: "#/components/schemas/Producto"
+        "404":
+          description: No existe
     put:
       tags: [Productos]
       summary: Upsert por ID canónico
@@ -112,37 +115,42 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/Producto" }
+            schema:
+              $ref: "#/components/schemas/Producto"
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Producto" }
+              schema:
+                $ref: "#/components/schemas/Producto"
 
-  /productos/codigos-barras/{codigo_barras}:
+  /productos/codigos-barras/{ean}:
     get:
       tags: [Productos]
-      summary: Buscar producto por código de barras (en sus variantes)
+      summary: Buscar por código de barras (variantes)
       parameters:
         - in: path
-          name: codigo_barras
+          name: ean
           required: true
           schema: { type: string }
+          description: Código de barras (EAN/UPC).
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Producto" }
-        "404": { description: No existe }
+              schema:
+                $ref: "#/components/schemas/Producto"
+        "404":
+          description: No existe
 
 components:
   schemas:
     Variante:
       type: object
       properties:
-        codigo_barras: { type: string }
+        codigo_barras: { type: string, description: "Código de barras (EAN/UPC)." }
         forma_farmaceutica: { type: string, nullable: true }
         concentracion_dosis: { type: string, nullable: true }
         unidades_por_paquete: { type: integer, nullable: true }
@@ -156,9 +164,12 @@ components:
         codigo_atc: { type: string, nullable: true }
         requiere_receta: { type: boolean, nullable: true }
         habilitado: { type: boolean }
-        keywords: { type: array, items: { type: string } }
+        keywords:
+          type: array
+          items: { type: string }
         variantes:
           type: array
-          items: { $ref: "#/components/schemas/Variante" }
+          items:
+            $ref: "#/components/schemas/Variante"
         creado_en: { type: string, format: date-time, nullable: true }
         actualizado_en: { type: string, format: date-time, nullable: true }
