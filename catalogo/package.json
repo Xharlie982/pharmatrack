@@ -1,0 +1,19 @@
+﻿{
+  "name": "pharmatrack-catalogo",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Microservicio Catálogo - Productos de PharmaTrack",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "2.8.5",
+    "express": "4.21.2",
+    "mongoose": "8.19.0",
+    "morgan": "1.10.0",
+    "swagger-ui-express": "5.0.1",
+    "yamljs": "0.3.0"
+  }
+}

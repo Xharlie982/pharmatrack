@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Catálogo de Productos API
+  version: "1.0.0"
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host: { default: localhost }
+      port: { default: "8084" }
+
+tags:
+  - name: Health
+  - name: Productos
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, example: ok } }
+
+  /productos:
+    get:
+      tags: [Productos]
+      summary: Buscar productos (texto/ATC/Rx/habilitado)
+      parameters:
+        - { in: query, name: texto, schema: { type: string }, description: "Full-text (nombre, keywords)" }
+        - { in: query, name: atc, schema: { type: string } }
+        - { in: query, name: rx, schema: { type: boolean } }
+        - { in: query, name: habilitado, schema: { type: boolean } }
+        - { in: query, name: limit, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { in: query, name: skip, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Producto" }
+    post:
+      tags: [Productos]
+      summary: Crear producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Producto" }
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Producto" }
+
+  /productos/{id}:
+    get:
+      tags: [Productos]
+      summary: Obtener por ID canónico
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+        "404": { description: No existe }
+    put:
+      tags: [Productos]
+      summary: Upsert por ID canónico
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Producto" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+
+  /productos/codigos-barras/{ean}:
+    get:
+      tags: [Productos]
+      summary: Buscar por código de barras (variantes)
+      parameters: [ { in: path, name: ean, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Producto" }}}}
+        "404": { description: No existe }
+
+components:
+  schemas:
+    Variante:
+      type: object
+      properties:
+        codigo_barras: { type: string }
+        forma_farmaceutica: { type: string, nullable: true }
+        concentracion_dosis: { type: string, nullable: true }
+        unidades_por_paquete: { type: integer, nullable: true }
+
+    Producto:
+      type: object
+      required: [_id, nombre]
+      properties:
+        _id: { type: string, description: "ID canónico (string)" }
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        habilitado: { type: boolean }
+        keywords: { type: array, items: { type: string } }
+        variantes:
+          type: array
+          items: { $ref: "#/components/schemas/Variante" }
+        creado_en: { type: string, format: date-time, nullable: true }
+        actualizado_en: { type: string, format: date-time, nullable: true }

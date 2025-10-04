@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: Orquestador de Disponibilidad API
+  version: "1.0.0"
+servers:
+  - url: "{scheme}://{host}:{port}"
+    variables:
+      scheme: { default: http }
+      host:   { default: localhost }
+      port:   { default: "8085" }
+
+paths:
+  /disponibilidad:
+    get:
+      summary: Disponibilidad por producto y zona
+      parameters:
+        - in: query
+          name: id_producto
+          required: true
+          schema: { type: string }
+        - in: query
+          name: distrito
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  producto:
+                    $ref: "#/components/schemas/Producto"
+                  sucursales:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SucursalStock"
+
+  /recetas/{id_receta}/validacion:
+    get:
+      summary: Validar disponibilidad de una receta
+      parameters:
+        - in: path
+          name: id_receta
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespuestaValidacion"
+
+components:
+  schemas:
+    Producto:
+      type: object
+      properties:
+        _id: { type: string }
+        nombre: { type: string }
+        requiere_receta: { type: boolean }
+    SucursalStock:
+      type: object
+      properties:
+        id_sucursal: { type: integer }
+        nombre: { type: string }
+        distrito: { type: string }
+        cantidad_actual: { type: integer }
+        umbral_reposicion: { type: integer }
+    ItemValidacion:
+      type: object
+      properties:
+        id_producto: { type: string }
+        solicitado: { type: integer }
+        disponible: { type: integer }
+        id_sucursal_sugerida: { type: integer, nullable: true }
+    RespuestaValidacion:
+      type: object
+      properties:
+        id_receta: { type: integer }
+        estado_sugerido:
+          type: string
+          enum: ["VALIDADA","RECHAZADA","PARCIAL"]
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ItemValidacion" }

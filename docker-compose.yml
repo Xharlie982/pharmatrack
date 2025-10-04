@@ -1,0 +1,96 @@
+﻿version: "3.9"
+
+services:
+  inventario:
+    build: ./inventario
+    environment:
+      PG_HOST: ${PG_HOST}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DB: ${PG_DB:-inventario}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  recetas:
+    build: ./recetas
+    environment:
+      MYSQL_URL: ${MYSQL_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  catalogo:
+    build: ./catalogo
+    environment:
+      MONGO_URL: ${MONGO_URL}
+      PORT: ${CATALOGO_PORT:-8084}
+      SERVE_DOCS: ${SERVE_DOCS:-0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  orquestador:
+    build: ./orquestador
+    environment:
+      INVENTARIO_URL: http://inventario:8082
+      RECETAS_URL:    http://recetas:8083
+      CATALOGO_URL:   http://catalogo:8084
+      PORT: ${ORQUESTADOR_PORT:-8085}
+      SERVE_DOCS: ${SERVE_DOCS:-0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      inventario:
+        condition: service_healthy
+      recetas:
+        condition: service_healthy
+      catalogo:
+        condition: service_healthy
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  analitico:
+    build: ./analitico
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      ATHENA_DB: ${ATHENA_DB:-pharmatrack_raw}
+      ATHENA_OUTPUT: ${ATHENA_OUTPUT}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8086/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

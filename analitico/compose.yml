@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  analitico:
+    build: .
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      ATHENA_DB: ${ATHENA_DB:-pharmatrack_raw}
+      ATHENA_OUTPUT: ${ATHENA_OUTPUT}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      SERVE_DOCS: "1"
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD","wget","-qO-","http://localhost:8086/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

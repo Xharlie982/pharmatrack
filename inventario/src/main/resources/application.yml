@@ -1,0 +1,29 @@
+server:
+  port: 8082
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DB:inventario}
+    username: ${PG_USER:inventario}
+    password: ${PG_PASSWORD:inventario}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.format_sql: true
+
+# CORS configurable (coma-separado). Ej: "https://tu-amplify,http://lb-xxxx.elb.amazonaws.com"
+cors:
+  origins: ${CORS_ORIGINS:*}
+
+# Swagger UI: apuntamos al YAML externo (montado) sin moverlo a resources.
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    url: ${SPRINGDOC_SWAGGER_UI_URL:/docs/inventario.yaml}
+
+# Donde está el YAML en el filesystem dentro del contenedor (lo montamos por volume)
+docs:
+  dir: ${DOCS_DIR:/app/docs}

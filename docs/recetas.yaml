@@ -1,0 +1,227 @@
+openapi: 3.0.3
+info:
+  title: Recetas & Dispensación API
+  version: "1.0.0"
+  description: |
+    Microservicio de **Recetas (MySQL + FastAPI)** para PharmaTrack.
+    Endpoints para crear/leer recetas, agregar líneas y registrar dispensaciones.
+    Health check en `/healthz` para el ALB.
+
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: localhost
+        description: DNS/IP para pruebas locales o el DNS del ALB en prod.
+        enum: [localhost, alb_dns_name]   # reemplaza alb_dns_name
+      port:
+        default: "8083"
+
+tags:
+  - name: Health
+  - name: Recetas
+  - name: Dispensaciones
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /recetas:
+    post:
+      tags: [Recetas]
+      summary: Crear receta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecetaCreate"
+            examples:
+              ejemplo:
+                value: { id_sucursal: 101, nombre_paciente: "Juan Perez" }
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receta"
+    get:
+      tags: [Recetas]
+      summary: Listar recetas (con filtros opcionales)
+      parameters:
+        - in: query
+          name: estado
+          schema: { type: string, enum: [NUEVA, VALIDADA, DISPENSADA, ANULADA] }
+          description: Filtra por estado
+        - in: query
+          name: desde
+          schema: { type: string, format: date-time }
+          description: Fecha/hora mínima (UTC)
+        - in: query
+          name: hasta
+          schema: { type: string, format: date-time }
+          description: Fecha/hora máxima (UTC)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Receta" }
+
+  /recetas/{id_receta}:
+    get:
+      tags: [Recetas]
+      summary: Obtener receta por ID (incluye detalle)
+      parameters:
+        - in: path
+          name: id_receta
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecetaConDetalle" }
+        "404":
+          description: No existe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /recetas/{id_receta}/detalle:
+    post:
+      tags: [Recetas]
+      summary: Agregar/actualizar línea de receta (upsert por id_producto)
+      parameters:
+        - in: path
+          name: id_receta
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineaCreate"
+            examples:
+              ejemplo:
+                value: { id_producto: "P123", cantidad: 2 }
+      responses:
+        "201":
+          description: Creado/actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+
+  /dispensaciones:
+    post:
+      tags: [Dispensaciones]
+      summary: Registrar dispensación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DispensacionCreate"
+            examples:
+              ejemplo:
+                value: { id_receta: 1, cantidad_total: 2 }
+      responses:
+        "201":
+          description: Creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dispensacion"
+        "404":
+          description: Receta no existe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+
+    RecetaCreate:
+      type: object
+      required: [id_sucursal]
+      properties:
+        id_sucursal: { type: integer }
+        nombre_paciente: { type: string, nullable: true }
+
+    Receta:
+      type: object
+      properties:
+        id_receta: { type: integer }
+        id_sucursal: { type: integer }
+        nombre_paciente: { type: string, nullable: true }
+        fecha_receta: { type: string, format: date-time }
+        estado:
+          type: string
+          enum: [NUEVA, VALIDADA, DISPENSADA, ANULADA]
+
+    LineaCreate:
+      type: object
+      required: [id_producto, cantidad]
+      properties:
+        id_producto: { type: string, minLength: 1 }
+        cantidad: { type: integer, minimum: 1 }
+
+    RecetaConDetalle:
+      allOf:
+        - $ref: "#/components/schemas/Receta"
+        - type: object
+          properties:
+            detalle:
+              type: array
+              items:
+                type: object
+                properties:
+                  id_producto: { type: string }
+                  cantidad: { type: integer }
+
+    DispensacionCreate:
+      type: object
+      required: [id_receta]
+      properties:
+        id_receta: { type: integer }
+        cantidad_total:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: |
+            Total dispensado en la operación (puede ser null si se registra por líneas en otro flujo).
+
+    Dispensacion:
+      type: object
+      properties:
+        id: { type: integer }
+        id_receta: { type: integer }
+        fecha_dispensacion: { type: string, format: date-time }
+        cantidad_total: { type: integer, nullable: true }
+
+    Error:
+      type: object
+      properties:
+        detail: { type: string }

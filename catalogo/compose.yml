@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  catalogo:
+    build: .
+    environment:
+      MONGO_URL: ${MONGO_URL}
+      PORT: ${CATALOGO_PORT:-8084}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      SERVE_DOCS: "1"              # <- activa swagger en /docs
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD","wget","-qO-","http://localhost:8084/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

@@ -1,0 +1,120 @@
+openapi: 3.0.3
+info:
+  title: Inventario & Sucursales API
+  version: "1.0.0"
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: localhost
+        enum: [localhost, alb_dns_name]
+      port:
+        default: "8082"
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, example: ok } }
+  /sucursales:
+    get:
+      summary: Listar sucursales (filtro opcional por distrito)
+      parameters: [ { in: query, name: distrito, schema: { type: string } } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Sucursal" }
+  /stock:
+    get:
+      summary: Consultar stock por filtros (producto, sucursal, distrito)
+      parameters:
+        - { in: query, name: id_producto, schema: { type: string } }
+        - { in: query, name: id_sucursal, schema: { type: integer } }
+        - { in: query, name: distrito, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Stock" }
+    patch:
+      summary: Ajustar stock (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [id_sucursal, id_producto, delta]
+              type: object
+              properties:
+                id_sucursal: { type: integer }
+                id_producto: { type: string }
+                delta: { type: integer, description: "positivo = ENTRADA; negativo = EGRESO" }
+                motivo: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stock" }
+  /movimientos:
+    post:
+      summary: Registrar ENTRADA/EGRESO
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [id_sucursal, id_producto, tipo_movimiento, cantidad]
+              type: object
+              properties:
+                id_sucursal: { type: integer }
+                id_producto: { type: string }
+                tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+                cantidad: { type: integer, minimum: 1 }
+                motivo: { type: string }
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Movimiento" }
+components:
+  schemas:
+    Sucursal:
+      type: object
+      properties:
+        id_sucursal: { type: integer }
+        nombre: { type: string }
+        distrito: { type: string }
+        direccion: { type: string }
+    Stock:
+      type: object
+      properties:
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        stock_actual: { type: integer }
+        umbral_reposicion: { type: integer }
+        fecha_actualizacion: { type: string, format: date-time }
+    Movimiento:
+      type: object
+      properties:
+        id: { type: integer }
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+        cantidad: { type: integer }
+        fecha_movimiento: { type: string, format: date-time }
+        motivo: { type: string }

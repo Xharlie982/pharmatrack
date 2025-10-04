@@ -1,0 +1,81 @@
+﻿# --- OS ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+*.lnk
+
+# --- IDE / Editors ---
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+.cache/
+.next/
+dist/
+build/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Java / Maven ---
+target/
+*.class
+dependency-reduced-pom.xml
+# (mantén el wrapper si existe)
+!/.mvn/wrapper/maven-wrapper.jar
+
+# --- Logs ---
+logs/
+*.log
+*.out
+*.err
+
+# --- Env / Creds (mantén un .env.example) ---
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.pfx
+.aws/
+
+# --- Docker (archivos locales opcionales) ---
+docker-compose.override.yml
+docker-compose.local.yml
+
+# --- Misc temporales ---
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# --- DB dumps locales (NO ignoramos nuestros DDL/Seeds) ---
+dumps/
+backup/
+*.sqlite
+*.sqlite3

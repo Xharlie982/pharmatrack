@@ -1,0 +1,30 @@
+version: "3.9"
+services:
+  inventario:
+    build: .
+    container_name: pharm-inventario
+    environment:
+      PG_HOST: ${PG_HOST}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DB:   ${PG_DB:-inventario}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+
+      # Swagger sin tocar resources
+      DOCS_DIR: /app/docs
+      SPRINGDOC_SWAGGER_UI_URL: /docs/inventario.yaml
+
+    # OJO: este path es relativo a la carpeta inventario/ (ejecuta compose desde aquí)
+    volumes:
+      - ../docs:/app/docs:ro
+
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD","wget","-qO-","http://localhost:8082/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
