@@ -58,6 +58,7 @@ logs/
 # --- Env / Creds (mantén un .env.example) ---
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 *.crt
