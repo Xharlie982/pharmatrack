@@ -1,24 +1,24 @@
 version: "3.9"
+
 services:
   inventario:
     build: .
-    container_name: pharm-inventario
-    environment:
-      PG_HOST: ${PG_HOST}
-      PG_PORT: ${PG_PORT:-5432}
-      PG_DB:   ${PG_DB:-inventario}
-      PG_USER: ${PG_USER}
-      PG_PASSWORD: ${PG_PASSWORD}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      DOCS_DIR: /app/docs
-      SPRINGDOC_SWAGGER_UI_URL: /docs/inventario.yaml
-      BASE_PATH: ${INVENTARIO_BASE_PATH:-}
-    volumes:
-      - ./docs:/app/docs:ro
+    container_name: inventario
     ports:
       - "8082:8082"
+    environment:
+      BASE_PATH: /inventario
+      PG_HOST: ${PG_HOST:-localhost}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DB: ${PG_DB:-inventario}
+      PG_USER: ${PG_USER:-inventario}
+      PG_PASSWORD: ${PG_PASSWORD:-inventario}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      DOCS_DIR: /app/docs
+    volumes:
+      - ./docs:/app/docs:ro
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8082${INVENTARIO_BASE_PATH}/healthz"]
+      test: ["CMD-SHELL","wget -qO- http://localhost:8082$${BASE_PATH:-}/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

@@ -1,4 +1,4 @@
-package com.pharmatrack.inventario.service;
+package com.pharmatrack.inventario.infrastructure.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;

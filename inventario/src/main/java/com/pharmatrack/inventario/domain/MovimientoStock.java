@@ -24,7 +24,7 @@ public class MovimientoStock {
   @Column(nullable = false)
   private Integer cantidad;
 
-  @Column(name = "fecha_movimiento", nullable = false)
+  @Column(name = "fecha_movimiento", nullable = false, insertable = false, updatable = false)
   private OffsetDateTime fecha_movimiento;
 
   private String motivo;

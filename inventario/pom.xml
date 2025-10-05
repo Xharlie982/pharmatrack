@@ -24,6 +24,7 @@
   </dependencyManagement>
 
   <dependencies>
+    <!-- Web + JPA + PostgreSQL -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
@@ -37,18 +38,32 @@
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
+
+    <!-- Swagger UI via springdoc; servimos YAML estático -->
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
       <version>2.6.0</version>
     </dependency>
 
-    <!-- Lombok solo para compilar; si tu IDE no procesa anotaciones,
-         IGUAL abajo te doy entidades con getters/setters manuales -->
+    <!-- Lombok opcional -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <optional>true</optional>
+    </dependency>
+
+    <!-- Testing -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>5.11.0</version>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

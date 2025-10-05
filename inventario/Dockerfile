@@ -12,5 +12,5 @@ WORKDIR /app
 COPY --from=build /src/target/*.jar app.jar
 EXPOSE 8082
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8082/healthz || exit 1
+  CMD ["sh","-lc","wget -qO- http://localhost:8082${BASE_PATH:-}/healthz || exit 1"]
 ENTRYPOINT ["java","-jar","/app/app.jar"]

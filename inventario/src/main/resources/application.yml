@@ -1,7 +1,7 @@
 server:
   port: 8082
   servlet:
-    context-path: ${BASE_PATH:}   # <- soporta /inventario
+    context-path: ${BASE_PATH:}   # soporta /inventario
 
 spring:
   datasource:
@@ -21,7 +21,6 @@ cors:
 springdoc:
   api-docs:
     enabled: true
-  # Este path es relativo al context-path; no hace falta repetir BASE_PATH.
   swagger-ui:
     url: /docs/inventario.yaml
 
