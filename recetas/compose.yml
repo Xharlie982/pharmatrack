@@ -5,10 +5,9 @@ services:
     environment:
       MYSQL_URL: ${MYSQL_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      SERVE_DOCS: "1"
       BASE_PATH: ${RECETAS_BASE_PATH:-}
 
-      # URLs hacia los otros microservicios vía ALB
+      # URLs hacia los otros MS vía ALB
       CATALOGO_BASE_URL: "http://${ALB_DNS}${CATALOGO_BASE_PATH}"
       INVENTARIO_BASE_URL: "http://${ALB_DNS}${INVENTARIO_BASE_PATH}"
 

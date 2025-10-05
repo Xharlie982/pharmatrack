@@ -19,15 +19,14 @@ def _as_bool(v: Optional[str], default: bool = True) -> bool:
 
 # ===== Config =====
 DB_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:pass@127.0.0.1:3306/recetas")
-BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # ej: "/recetas"
+BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # ej: "/recetas" o ""
 
 CATALOGO_BASE_URL = os.getenv("CATALOGO_BASE_URL", "http://localhost:8084/catalogo").rstrip("/")
 INVENTARIO_BASE_URL = os.getenv("INVENTARIO_BASE_URL", "http://localhost:8082/inventario").rstrip("/")
 
 VALIDATE_PRODUCTO = _as_bool(os.getenv("VALIDATE_PRODUCTO", "1"), True)
 VALIDATE_SUCURSAL = _as_bool(os.getenv("VALIDATE_SUCURSAL", "1"), True)
-FAIL_CLOSED = _as_bool(os.getenv("FAIL_CLOSED", "1"), True)  # error llamando a otros svcs => 502
-
+FAIL_CLOSED = _as_bool(os.getenv("FAIL_CLOSED", "1"), True)  # si error llamando a otros svcs => 502
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "3.0"))
 
 http_client = httpx.Client(timeout=HTTP_TIMEOUT)
@@ -68,8 +67,17 @@ class Dispensacion(Base):
 # No alterará tu esquema si ya existe
 Base.metadata.create_all(engine)
 
-# ===== FastAPI + CORS =====
-app = FastAPI(title="Recetas & Dispensación API", version="1.0.1")
+# ===== FastAPI + CORS (docs nativo con soporte de prefijo) =====
+docs_url = f"{BASE_PATH}/docs" if BASE_PATH else "/docs"
+openapi_url = f"{BASE_PATH}/openapi.json" if BASE_PATH else "/openapi.json"
+
+app = FastAPI(
+    title="Recetas & Dispensación API",
+    version="1.0.3",
+    docs_url=docs_url,
+    redoc_url=None,
+    openapi_url=openapi_url,
+)
 
 cors_origins = os.getenv("CORS_ORIGINS", "*")
 origins = [o.strip() for o in cors_origins.split(",")] if cors_origins else ["*"]
@@ -79,7 +87,6 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# Cerrar httpx al apagar
 @app.on_event("shutdown")
 def _shutdown():
     try:
@@ -87,22 +94,32 @@ def _shutdown():
     except Exception:
         pass
 
-# Middleware para “strip” del prefijo cuando el LB no reescribe
+# --- Middleware: recorta el prefijo SOLO para las rutas de negocio.
+#     Deja pasar tal cual las rutas de /{BASE_PATH}/docs y /{BASE_PATH}/openapi.json
 from starlette.middleware.base import BaseHTTPMiddleware
+
 class StripPrefixMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, prefix: str):
-        super().__init__(app); self.prefix = prefix
+    def __init__(self, app, prefix: str, passthrough: Optional[List[str]] = None):
+        super().__init__(app)
+        self.prefix = prefix
+        self.passthrough = set(passthrough or [])
+
     async def dispatch(self, request, call_next):
-        path = request.scope.get("path","")
+        path = request.scope.get("path", "")
         if self.prefix and path.startswith(self.prefix):
-            request.scope["path"] = path[len(self.prefix):] or "/"
-        elif self.prefix:
-            from starlette.responses import JSONResponse
-            return JSONResponse({"detail":"Not found"}, status_code=404)
+            remainder = path[len(self.prefix):] or "/"
+            # Si la subruta ES docs u openapi, NO recortar (coincide con rutas registradas con prefijo)
+            if not any(remainder.startswith(p) for p in self.passthrough):
+                request.scope["path"] = remainder
+        # Si no empieza con prefijo, no devolvemos 404: dejamos pasar (útil para pruebas directas)
         return await call_next(request)
 
 if BASE_PATH:
-    app.add_middleware(StripPrefixMiddleware, prefix=BASE_PATH)
+    app.add_middleware(
+        StripPrefixMiddleware,
+        prefix=BASE_PATH,
+        passthrough=["/docs", "/openapi.json"]
+    )
 
 # ===== Helpers: validaciones externas =====
 def _exists_producto(id_producto: str) -> bool:
@@ -121,7 +138,7 @@ def _exists_producto(id_producto: str) -> bool:
 def _exists_sucursal(id_sucursal: int) -> bool:
     if not VALIDATE_SUCURSAL:
         return True
-    # Ajusta este path si tu Inventario expone otro para obtener sucursal por ID
+    # Ajusta si tu Inventario expone otra ruta
     url = f"{INVENTARIO_BASE_URL}/sucursales/{id_sucursal}"
     try:
         r = http_client.get(url)
@@ -217,20 +234,3 @@ def registrar_dispensacion(body: DispensacionCreate):
             "id": x.id, "id_receta": x.id_receta,
             "fecha_dispensacion": x.fecha_dispensacion, "cantidad_total": x.cantidad_total
         }
-
-# ===== Swagger embebido (docs/recetas.yaml) =====
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-if os.getenv("SERVE_DOCS", "1") == "1":
-    app.mount("/docs", StaticFiles(directory="docs"), name="docs")
-    SWAGGER_HTML = """
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Swagger</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
-    </head><body><div id="swagger"></div>
-    <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-    <script>window.ui=SwaggerUIBundle({url:'/docs/recetas.yaml',dom_id:'#swagger'});</script>
-    </body></html>
-    """
-    @app.get("/swagger-ui", response_class=HTMLResponse)
-    def swagger_ui():
-        return SWAGGER_HTML
