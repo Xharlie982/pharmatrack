@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Integer, String, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Mapped, mapped_column
 
-# --- HTTP client para validaciones externas ---
 import httpx
 
 def _as_bool(v: Optional[str], default: bool = True) -> bool:
@@ -19,14 +18,14 @@ def _as_bool(v: Optional[str], default: bool = True) -> bool:
 
 # ===== Config =====
 DB_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:pass@127.0.0.1:3306/recetas")
-BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # ej: "/recetas" o ""
+BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # ej. "/recetas" o ""
 
 CATALOGO_BASE_URL = os.getenv("CATALOGO_BASE_URL", "http://localhost:8084/catalogo").rstrip("/")
 INVENTARIO_BASE_URL = os.getenv("INVENTARIO_BASE_URL", "http://localhost:8082/inventario").rstrip("/")
 
 VALIDATE_PRODUCTO = _as_bool(os.getenv("VALIDATE_PRODUCTO", "1"), True)
 VALIDATE_SUCURSAL = _as_bool(os.getenv("VALIDATE_SUCURSAL", "1"), True)
-FAIL_CLOSED = _as_bool(os.getenv("FAIL_CLOSED", "1"), True)  # si error llamando a otros svcs => 502
+FAIL_CLOSED = _as_bool(os.getenv("FAIL_CLOSED", "1"), True)   # si falla un MS -> 502
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "3.0"))
 
 http_client = httpx.Client(timeout=HTTP_TIMEOUT)
@@ -64,16 +63,15 @@ class Dispensacion(Base):
     fecha_dispensacion: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     cantidad_total: Mapped[Optional[int]] = mapped_column(Integer)
 
-# No alterará tu esquema si ya existe
 Base.metadata.create_all(engine)
 
-# ===== FastAPI + CORS (docs nativo con soporte de prefijo) =====
-docs_url = f"{BASE_PATH}/docs" if BASE_PATH else "/docs"
-openapi_url = f"{BASE_PATH}/openapi.json" if BASE_PATH else "/openapi.json"
+# ===== FastAPI + CORS =====
+docs_url   = f"{BASE_PATH}/docs"        if BASE_PATH else "/docs"
+openapi_url= f"{BASE_PATH}/openapi.json"if BASE_PATH else "/openapi.json"
 
 app = FastAPI(
     title="Recetas & Dispensación API",
-    version="1.0.3",
+    version="1.0.4",
     docs_url=docs_url,
     redoc_url=None,
     openapi_url=openapi_url,
@@ -94,33 +92,6 @@ def _shutdown():
     except Exception:
         pass
 
-# --- Middleware: recorta el prefijo SOLO para las rutas de negocio.
-#     Deja pasar tal cual las rutas de /{BASE_PATH}/docs y /{BASE_PATH}/openapi.json
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class StripPrefixMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, prefix: str, passthrough: Optional[List[str]] = None):
-        super().__init__(app)
-        self.prefix = prefix
-        self.passthrough = set(passthrough or [])
-
-    async def dispatch(self, request, call_next):
-        path = request.scope.get("path", "")
-        if self.prefix and path.startswith(self.prefix):
-            remainder = path[len(self.prefix):] or "/"
-            # Si la subruta ES docs u openapi, NO recortar (coincide con rutas registradas con prefijo)
-            if not any(remainder.startswith(p) for p in self.passthrough):
-                request.scope["path"] = remainder
-        # Si no empieza con prefijo, no devolvemos 404: dejamos pasar (útil para pruebas directas)
-        return await call_next(request)
-
-if BASE_PATH:
-    app.add_middleware(
-        StripPrefixMiddleware,
-        prefix=BASE_PATH,
-        passthrough=["/docs", "/openapi.json"]
-    )
-
 # ===== Helpers: validaciones externas =====
 def _exists_producto(id_producto: str) -> bool:
     if not VALIDATE_PRODUCTO:
@@ -138,16 +109,34 @@ def _exists_producto(id_producto: str) -> bool:
 def _exists_sucursal(id_sucursal: int) -> bool:
     if not VALIDATE_SUCURSAL:
         return True
-    # Ajusta si tu Inventario expone otra ruta
-    url = f"{INVENTARIO_BASE_URL}/sucursales/{id_sucursal}"
-    try:
-        r = http_client.get(url)
-        if r.status_code == 404: return False
-        return 200 <= r.status_code < 300
-    except httpx.RequestError as e:
-        if FAIL_CLOSED:
-            raise HTTPException(status_code=502, detail=f"Inventario no disponible: {e}") from e
-        return True
+    # intentamos varias formas comunes
+    candidates = [
+        f"{INVENTARIO_BASE_URL}/sucursales/{id_sucursal}",
+        f"{INVENTARIO_BASE_URL}/sucursales?id_sucursal={id_sucursal}",
+        f"{INVENTARIO_BASE_URL}/sucursales?id={id_sucursal}",
+    ]
+    for url in candidates:
+        try:
+            r = http_client.get(url)
+            if 200 <= r.status_code < 300:
+                # si viene JSON con id_sucursal, validamos que coincida (si existe)
+                try:
+                    data = r.json()
+                    if isinstance(data, dict) and "id_sucursal" in data:
+                        return int(data["id_sucursal"]) == int(id_sucursal)
+                    if isinstance(data, list):
+                        return any(int(x.get("id_sucursal", -1)) == int(id_sucursal) for x in data if isinstance(x, dict))
+                except Exception:
+                    pass
+                return True
+            if r.status_code == 404:
+                continue
+        except httpx.RequestError:
+            continue
+
+    if FAIL_CLOSED:
+        raise HTTPException(status_code=502, detail="Inventario no disponible o no expone /sucursales compatible")
+    return True  # fail-open si configurado
 
 # ===== Schemas =====
 class RecetaCreate(BaseModel):
@@ -163,7 +152,7 @@ class DispensacionCreate(BaseModel):
     cantidad_total: Optional[int] = Field(default=None, ge=0)
 
 # ===== Endpoints =====
-@app.get("/healthz")
+@app.get(f"{BASE_PATH}/healthz")
 def healthz():
     return {"status": "ok"}
 
