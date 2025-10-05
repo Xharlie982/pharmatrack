@@ -5,6 +5,7 @@
   <groupId>com.pharmatrack</groupId>
   <artifactId>inventario</artifactId>
   <version>1.0.0</version>
+  <packaging>jar</packaging>
 
   <properties>
     <java.version>21</java.version>
@@ -39,21 +40,21 @@
       <scope>runtime</scope>
     </dependency>
 
-    <!-- Swagger UI via springdoc; servimos YAML estático -->
+    <!-- Swagger/OpenAPI -->
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
       <version>2.6.0</version>
     </dependency>
 
-    <!-- Lombok opcional -->
+    <!-- Lombok (opcional) -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <optional>true</optional>
     </dependency>
 
-    <!-- Testing -->
+    <!-- Tests -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
@@ -78,9 +79,23 @@
           <parameters>true</parameters>
         </configuration>
       </plugin>
+
+      <!-- ESTE es el cambio importante -->
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring.boot.version}</version>
+        <configuration>
+          <!-- opcional, pero ayuda a que encuentre la clase principal sin dudas -->
+          <mainClass>com.pharmatrack.inventario.InventarioBackendApplication</mainClass>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
