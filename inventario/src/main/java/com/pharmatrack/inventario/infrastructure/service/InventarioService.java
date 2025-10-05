@@ -6,6 +6,7 @@ import com.pharmatrack.inventario.domain.StockPK;
 import com.pharmatrack.inventario.domain.Sucursal;
 import com.pharmatrack.inventario.dto.SucursalCreateRequest;
 import com.pharmatrack.inventario.dto.SucursalUpdateRequest;
+import com.pharmatrack.inventario.infrastructure.client.CatalogoClient;
 import com.pharmatrack.inventario.infrastructure.repository.MovimientoRepo;
 import com.pharmatrack.inventario.infrastructure.repository.StockRepo;
 import com.pharmatrack.inventario.infrastructure.repository.SucursalRepo;
@@ -22,11 +23,13 @@ public class InventarioService {
   private final SucursalRepo sucursalRepo;
   private final StockRepo stockRepo;
   private final MovimientoRepo movimientoRepo;
+  private final CatalogoClient catalogoClient;
 
-  public InventarioService(SucursalRepo sr, StockRepo str, MovimientoRepo mr) {
+  public InventarioService(SucursalRepo sr, StockRepo str, MovimientoRepo mr, CatalogoClient catalogoClient) {
     this.sucursalRepo = sr;
     this.stockRepo = str;
     this.movimientoRepo = mr;
+    this.catalogoClient = catalogoClient;
   }
 
   // ---------- Sucursales ----------
@@ -38,9 +41,8 @@ public class InventarioService {
 
   @Transactional
   public Sucursal crearSucursal(SucursalCreateRequest req) {
-    if (sucursalRepo.existsById(req.id_sucursal())) {
+    if (sucursalRepo.existsById(req.id_sucursal()))
       throw new IllegalArgumentException("La sucursal ya existe");
-    }
     Sucursal s = new Sucursal();
     s.setId_sucursal(req.id_sucursal());
     s.setNombre(req.nombre().trim());
@@ -70,9 +72,7 @@ public class InventarioService {
     }
 
     if (idProducto != null && idSucursal != null) {
-      StockPK pk = new StockPK();
-      pk.setId_sucursal(idSucursal);
-      pk.setId_producto(idProducto);
+      StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
       return stockRepo.findById(pk).map(List::of).orElse(List.of());
     }
 
@@ -91,10 +91,10 @@ public class InventarioService {
   public Stock ajustarStock(Integer idSucursal, String idProducto, int ajuste, String motivo) {
     if (ajuste == 0) throw new IllegalArgumentException("ajuste no puede ser 0");
 
-    StockPK pk = new StockPK();
-    pk.setId_sucursal(idSucursal);
-    pk.setId_producto(idProducto);
+    // ✅ valida en Catálogo
+    validarProductoExiste(idProducto);
 
+    StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
     Stock s = stockRepo.findById(pk).orElseThrow(() ->
             new NoSuchElementException("No existe stock para esa sucursal y producto"));
 
@@ -126,20 +126,18 @@ public class InventarioService {
     }
 
     String tipo = m.getTipo_movimiento().toUpperCase(Locale.ROOT);
-    if (!tipo.equals("ENTRADA") && !tipo.equals("EGRESO")) {
+    if (!tipo.equals("ENTRADA") && !tipo.equals("EGRESO"))
       throw new IllegalArgumentException("tipo_movimiento debe ser ENTRADA o EGRESO");
-    }
     if (m.getCantidad() <= 0) throw new IllegalArgumentException("cantidad debe ser > 0");
+
+    // ✅ valida en Catálogo
+    validarProductoExiste(m.getId_producto());
 
     int delta = tipo.equals("ENTRADA") ? m.getCantidad() : -m.getCantidad();
 
-    StockPK pk = new StockPK();
-    pk.setId_sucursal(m.getId_sucursal());
-    pk.setId_producto(m.getId_producto());
-
+    StockPK pk = new StockPK(); pk.setId_sucursal(m.getId_sucursal()); pk.setId_producto(m.getId_producto());
     Stock s = stockRepo.findById(pk).orElse(null);
 
-    // Atajo controlado: si es ENTRADA y no existe fila, la creamos
     if (s == null) {
       if ("ENTRADA".equals(tipo)) {
         s = new Stock();
@@ -166,5 +164,13 @@ public class InventarioService {
 
   public List<MovimientoStock> listarMovimientos(String productoId, Integer sucursalId) {
     return movimientoRepo.buscar(productoId, sucursalId);
+  }
+
+  // ---------- helper ----------
+
+  private void validarProductoExiste(String idProducto) {
+    if (!catalogoClient.existeProducto(idProducto)) {
+      throw new NoSuchElementException("Producto no existe en Catálogo");
+    }
   }
 }

@@ -1,7 +1,6 @@
 server:
   port: 8082
   servlet:
-    # deja /inventario por defecto; igual puedes override con BASE_PATH
     context-path: ${BASE_PATH:/inventario}
 
 spring:
@@ -17,7 +16,6 @@ spring:
       hibernate.format_sql: true
 
   mvc:
-    # para que podamos capturar 404 en el handler (NoHandlerFoundException)
     throw-exception-if-no-handler-found: true
 
 cors:
@@ -27,11 +25,16 @@ springdoc:
   api-docs:
     enabled: true
   swagger-ui:
-    # >>> El UI vivirá en /inventario/docs
     path: /docs
-    # >>> El UI cargará este YAML
-    url: /openapi/inventario.yaml
+    # 👇 Deja el buscador vacío y NO muestra el link debajo del título
+    disable-swagger-default-url: true
+    # (IMPORTANTE) No pongas "url:" aquí. El spec seguirá disponible en /inventario/openapi/inventario.yaml
 
-# Ruta del directorio donde montas el YAML (docker: /app/docs)
+# Directorio donde sirves el YAML estático
 docs:
   dir: ${DOCS_DIR:/app/docs}
+
+# 🔗 Config de integración con Catálogo (se lee de variables de entorno)
+catalogo:
+  base-url: ${CATALOGO_BASE_URL:http://localhost:8084/catalogo}
+  validate-product: ${CATALOGO_VALIDATE_PRODUCT:true}

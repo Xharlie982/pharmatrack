@@ -13,6 +13,11 @@ services:
       PG_PASSWORD: ${PG_PASSWORD:-inventario}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       DOCS_DIR: /app/docs
+
+      # 👇 URL leída por CatalogoClient (¡no está hardcodeada!)
+      CATALOGO_BASE_URL: http://lb-prod-carlosalith-1509980544.us-east-1.elb.amazonaws.com/catalogo
+      CATALOGO_VALIDATE_PRODUCT: "true"
+
     volumes:
       - ./docs:/app/docs:ro
     healthcheck:
