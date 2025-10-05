@@ -1,8 +1,7 @@
 openapi: 3.0.3
 info:
-  title: Inventario API
-  version: "1.0.0"
-
+  title: Inventario y Sucursales API
+  version: "1.2.0"
 servers:
   - url: http://{host}:{port}{basePath}
     variables:
@@ -39,7 +38,7 @@ paths:
         - in: query
           name: distrito
           schema: { type: string }
-          description: Filtra por distrito (coincidencia exacta, sin mayúsculas/minúsculas).
+          description: Filtra por distrito (coincidencia exacta, sin mayúsc/minúsc).
       responses:
         "200":
           description: OK
@@ -49,6 +48,64 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Sucursal"
+
+    post:
+      tags: [Sucursales]
+      summary: Crear sucursal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SucursalCreate"
+      responses:
+        "201":
+          description: Creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sucursal" }
+        "400": { description: Datos inválidos }
+        "409": { description: Conflicto (ID existente) }
+
+  /sucursales/{id_sucursal}:
+    put:
+      tags: [Sucursales]
+      summary: Actualizar datos de una sucursal
+      parameters:
+        - in: path
+          name: id_sucursal
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SucursalUpdate"
+      responses:
+        "200":
+          description: Actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Sucursal" }
+        "400": { description: Datos inválidos }
+        "404": { description: No existe }
+
+    delete:
+      tags: [Sucursales]
+      summary: Eliminar sucursal (protegido)
+      description: >
+        Elimina la sucursal **solo si no tiene referencias** en `stock` ni `movimiento_stock`.  
+        Si existen referencias, responde **409**.
+      parameters:
+        - in: path
+          name: id_sucursal
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Eliminado }
+        "404": { description: No existe }
+        "409": { description: No se puede eliminar: sucursal en uso }
 
   /stock:
     get:
@@ -79,17 +136,24 @@ paths:
     patch:
       tags: [Stocks]
       summary: Ajuste de stock (positivo/negativo) para un producto en una sucursal
+      description: >
+        **Preferido:** enviar `ajuste` (entero, puede ser negativo).  
+        **Compatibilidad:** también se admite `delta` (deprecado).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [id_sucursal, id_producto, delta]
+              required: [id_sucursal, id_producto, ajuste]
               properties:
                 id_sucursal: { type: integer }
                 id_producto: { type: string }
-                delta: { type: integer, description: "Puede ser negativo." }
+                ajuste: { type: integer, description: "Variación de stock. Puede ser negativa." }
+                delta:
+                  type: integer
+                  description: "Alias legado de 'ajuste'."
+                  deprecated: true
                 motivo: { type: string, nullable: true }
       responses:
         "200":
@@ -97,8 +161,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StockItem" }
-        "400": { description: Stock insuficiente }
-        "404": { description: No existe }
+        "400": { description: Stock insuficiente o datos inválidos }
+        "404": { description: No existe stock (o sucursal/producto) }
 
   /movimientos:
     get:
@@ -123,6 +187,9 @@ paths:
     post:
       tags: [Movimientos]
       summary: Crear movimiento (ENTRADA/EGRESO) y aplicar al stock
+      description: >
+        Si (sucursal, producto) **no existe** y el tipo es **ENTRADA**, se crea
+        automáticamente la fila en `stock` con `umbral_reposicion=0`.
       requestBody:
         required: true
         content:
@@ -135,7 +202,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Movimiento" }
-        "400": { description: Stock insuficiente }
+        "400": { description: Stock insuficiente / datos inválidos }
+        "404": { description: No existe (para EGRESO sin stock base) }
 
 components:
   schemas:
@@ -146,6 +214,23 @@ components:
         nombre: { type: string }
         distrito: { type: string }
         direccion: { type: string, nullable: true }
+
+    SucursalCreate:
+      type: object
+      required: [id_sucursal, nombre, distrito, direccion]
+      properties:
+        id_sucursal: { type: integer, minimum: 1 }
+        nombre: { type: string, minLength: 1 }
+        distrito: { type: string, minLength: 1 }
+        direccion: { type: string, minLength: 1 }
+
+    SucursalUpdate:
+      type: object
+      required: [nombre, distrito, direccion]
+      properties:
+        nombre: { type: string, minLength: 1 }
+        distrito: { type: string, minLength: 1 }
+        direccion: { type: string, minLength: 1 }
 
     StockItem:
       type: object

@@ -4,6 +4,8 @@ import com.pharmatrack.inventario.domain.MovimientoStock;
 import com.pharmatrack.inventario.domain.Stock;
 import com.pharmatrack.inventario.domain.StockPK;
 import com.pharmatrack.inventario.domain.Sucursal;
+import com.pharmatrack.inventario.dto.SucursalCreateRequest;
+import com.pharmatrack.inventario.dto.SucursalUpdateRequest;
 import com.pharmatrack.inventario.infrastructure.repository.MovimientoRepo;
 import com.pharmatrack.inventario.infrastructure.repository.StockRepo;
 import com.pharmatrack.inventario.infrastructure.repository.SucursalRepo;
@@ -27,10 +29,37 @@ public class InventarioService {
     this.movimientoRepo = mr;
   }
 
+  // ---------- Sucursales ----------
+
   public List<Sucursal> listarSucursales(String distrito) {
     if (distrito == null || distrito.isBlank()) return sucursalRepo.findAll();
     return sucursalRepo.findByDistritoIgnoreCase(distrito.trim());
   }
+
+  @Transactional
+  public Sucursal crearSucursal(SucursalCreateRequest req) {
+    if (sucursalRepo.existsById(req.id_sucursal())) {
+      throw new IllegalArgumentException("La sucursal ya existe");
+    }
+    Sucursal s = new Sucursal();
+    s.setId_sucursal(req.id_sucursal());
+    s.setNombre(req.nombre().trim());
+    s.setDistrito(req.distrito().trim());
+    s.setDireccion(req.direccion().trim());
+    return sucursalRepo.save(s);
+  }
+
+  @Transactional
+  public Sucursal actualizarSucursal(Integer id, SucursalUpdateRequest req) {
+    Sucursal s = sucursalRepo.findById(id)
+            .orElseThrow(() -> new NoSuchElementException("No existe"));
+    s.setNombre(req.nombre().trim());
+    s.setDistrito(req.distrito().trim());
+    s.setDireccion(req.direccion().trim());
+    return sucursalRepo.save(s);
+  }
+
+  // ---------- Stock ----------
 
   public List<Stock> consultarStock(String idProducto, Integer idSucursal, String distrito) {
     List<Integer> idsPorDistrito = null;
@@ -41,7 +70,9 @@ public class InventarioService {
     }
 
     if (idProducto != null && idSucursal != null) {
-      StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
+      StockPK pk = new StockPK();
+      pk.setId_sucursal(idSucursal);
+      pk.setId_producto(idProducto);
       return stockRepo.findById(pk).map(List::of).orElse(List.of());
     }
 
@@ -57,14 +88,17 @@ public class InventarioService {
   }
 
   @Transactional
-  public Stock ajustarStock(Integer idSucursal, String idProducto, int delta, String motivo) {
-    if (delta == 0) throw new IllegalArgumentException("delta no puede ser 0");
+  public Stock ajustarStock(Integer idSucursal, String idProducto, int ajuste, String motivo) {
+    if (ajuste == 0) throw new IllegalArgumentException("ajuste no puede ser 0");
 
-    StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
+    StockPK pk = new StockPK();
+    pk.setId_sucursal(idSucursal);
+    pk.setId_producto(idProducto);
+
     Stock s = stockRepo.findById(pk).orElseThrow(() ->
             new NoSuchElementException("No existe stock para esa sucursal y producto"));
 
-    int nuevo = s.getStock_actual() + delta;
+    int nuevo = s.getStock_actual() + ajuste;
     if (nuevo < 0) throw new IllegalArgumentException("No hay stock suficiente para egreso");
 
     s.setStock_actual(nuevo);
@@ -74,13 +108,15 @@ public class InventarioService {
     MovimientoStock m = new MovimientoStock();
     m.setId_sucursal(idSucursal);
     m.setId_producto(idProducto);
-    m.setTipo_movimiento(delta >= 0 ? "ENTRADA" : "EGRESO");
-    m.setCantidad(Math.abs(delta));
+    m.setTipo_movimiento(ajuste >= 0 ? "ENTRADA" : "EGRESO");
+    m.setCantidad(Math.abs(ajuste));
     m.setMotivo(motivo);
     movimientoRepo.save(m);
 
     return s;
   }
+
+  // ---------- Movimientos ----------
 
   @Transactional
   public MovimientoStock registrarMovimiento(MovimientoStock m) {
@@ -88,17 +124,34 @@ public class InventarioService {
             m.getTipo_movimiento() == null || m.getCantidad() == null) {
       throw new IllegalArgumentException("Campos requeridos: id_sucursal, id_producto, tipo_movimiento, cantidad");
     }
+
     String tipo = m.getTipo_movimiento().toUpperCase(Locale.ROOT);
-    if (!tipo.equals("ENTRADA") && !tipo.equals("EGRESO"))
+    if (!tipo.equals("ENTRADA") && !tipo.equals("EGRESO")) {
       throw new IllegalArgumentException("tipo_movimiento debe ser ENTRADA o EGRESO");
+    }
     if (m.getCantidad() <= 0) throw new IllegalArgumentException("cantidad debe ser > 0");
 
-    // Aplica al stock
     int delta = tipo.equals("ENTRADA") ? m.getCantidad() : -m.getCantidad();
 
-    StockPK pk = new StockPK(); pk.setId_sucursal(m.getId_sucursal()); pk.setId_producto(m.getId_producto());
-    Stock s = stockRepo.findById(pk).orElseThrow(() ->
-            new NoSuchElementException("No existe stock para esa sucursal y producto"));
+    StockPK pk = new StockPK();
+    pk.setId_sucursal(m.getId_sucursal());
+    pk.setId_producto(m.getId_producto());
+
+    Stock s = stockRepo.findById(pk).orElse(null);
+
+    // Atajo controlado: si es ENTRADA y no existe fila, la creamos
+    if (s == null) {
+      if ("ENTRADA".equals(tipo)) {
+        s = new Stock();
+        s.setId_sucursal(m.getId_sucursal());
+        s.setId_producto(m.getId_producto());
+        s.setStock_actual(0);
+        s.setUmbral_reposicion(0);
+        s.setFecha_actualizacion(OffsetDateTime.now());
+      } else {
+        throw new NoSuchElementException("No existe stock para esa sucursal y producto");
+      }
+    }
 
     int nuevo = s.getStock_actual() + delta;
     if (nuevo < 0) throw new IllegalArgumentException("No hay stock suficiente para egreso");
@@ -107,7 +160,6 @@ public class InventarioService {
     s.setFecha_actualizacion(OffsetDateTime.now());
     stockRepo.save(s);
 
-    // Guarda el movimiento (fecha la pone la DB)
     m.setTipo_movimiento(tipo);
     return movimientoRepo.save(m);
   }
