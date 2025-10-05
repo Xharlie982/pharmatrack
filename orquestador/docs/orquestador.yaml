@@ -1,97 +1,65 @@
 openapi: 3.0.3
-info:
-  title: Orquestador de Disponibilidad API
-  version: "1.1.0"
+info: { title: Orquestador PharmaTrack, version: "1.2.1" }
+
 servers:
-  - url: http://{host}{basePath}
+  - url: http://{host}:{port}{basePath}
     variables:
-      host:
-        default: lb-prod-carlosalith-1509980544.us-east-1.elb.amazonaws.com
-      basePath:
-        default: /orquestador
+      host:     { default: localhost }
+      port:     { default: "8085" }
+      basePath: { default: /orquestador }
 
 tags:
   - name: Health
   - name: Disponibilidad
   - name: Recetas
+  - name: Sugerencias
 
 paths:
   /healthz:
     get:
       tags: [Health]
-      summary: Liveness probe
+      summary: Liveness
       responses:
         "200":
           description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: { status: { type: string, example: ok } }
 
   /readyz:
     get:
       tags: [Health]
-      summary: Readiness (ping a servicios downstream)
+      summary: Readiness (ping a downstreams)
       responses:
-        "200":
-          description: OK
-        "503":
-          description: Downstream no disponible
+        "200": { description: OK }
+        "503": { description: Downstream no disponible }
 
   /disponibilidad:
     get:
       tags: [Disponibilidad]
       summary: Disponibilidad por producto y zona
       parameters:
-        - in: query
-          name: id_producto
-          required: true
-          schema: { type: string }
-        - in: query
-          name: distrito
-          required: false
-          schema: { type: string }
+        - { name: productoId, in: query, required: false, schema: { type: string } }
+        - { name: q,          in: query, required: false, schema: { type: string }, description: "búsqueda libre en Catálogo" }
+        - { name: distrito,   in: query, required: true,  schema: { type: string } }
+        - { name: minStock,   in: query, required: false, schema: { type: integer, default: 1 } }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  producto:
-                    $ref: "#/components/schemas/Producto"
-                  sucursales:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SucursalStock"
+        "200": { description: OK }
         "400": { description: Faltan parámetros }
         "502": { description: Error en servicios downstream }
 
-  /recetas/{id_receta}/validacion:
+  /ficha-producto/{productoId}:
     get:
-      tags: [Recetas]
-      summary: Validar disponibilidad de una receta
+      tags: [Disponibilidad]
+      summary: Ficha (Catálogo + agregados de stock)
       parameters:
-        - in: path
-          name: id_receta
-          required: true
-          schema: { type: integer }
+        - { name: productoId, in: path, required: true, schema: { type: string } }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RespuestaValidacion"
-        "404": { description: Receta no encontrada }
+        "200": { description: OK }
+        "404": { description: Not Found }
         "502": { description: Downstream error }
 
-  /dispensar:
+  /receta/validar:
     post:
       tags: [Recetas]
-      summary: Dispensar una receta (coordina movimientos y creación de dispensación)
+      summary: Pre-validar stock para una receta (no escribe nada)
       requestBody:
         required: true
         content:
@@ -101,77 +69,53 @@ paths:
               required: [ id_receta ]
               properties:
                 id_receta: { type: integer }
-                idempotency_key:
-                  type: string
-                  description: Recomendado para reintentos seguros
       responses:
-        "200":
-          description: Dispensación efectuada
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResultadoDispensacion"
-        "409": { description: Stock insuficiente }
-        "422": { description: Receta sin líneas o datos inválidos }
-        "502": { description: Downstream error con compensación }
-        "504": { description: Timeout coordinando servicios }
+        "200": { description: OK (todo disponible) }
+        "207": { description: Parcial (algunos ítems faltan) }
+        "400": { description: Bad Request }
+        "404": { description: Receta no encontrada }
+        "502": { description: Downstream error }
 
-components:
-  schemas:
-    Producto:
-      type: object
-      properties:
-        _id: { type: string }
-        nombre: { type: string }
-        requiere_receta: { type: boolean }
+  /receta/{id}/validacion:
+    get:
+      tags: [Recetas]
+      summary: Ver la validación calculada
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not Found }
+        "502": { description: Downstream error }
 
-    SucursalStock:
-      type: object
-      properties:
-        id_sucursal: { type: integer }
-        nombre: { type: string }
-        distrito: { type: string }
-        stock_actual: { type: integer }
-        umbral_reposicion: { type: integer }
+  /reserva-stock:
+    post:
+      tags: [Recetas]
+      summary: Reserva efímera (in-memory) por id_receta (MVP)
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ id_receta ]
+              properties:
+                id_receta: { type: integer }
+      responses:
+        "200": { description: Reserved }
+        "207": { description: Partial }
+        "409": { description: Conflict (sin stock) }
+        "502": { description: Downstream error }
 
-    ItemValidacion:
-      type: object
-      properties:
-        id_producto: { type: string }
-        solicitado: { type: integer }
-        disponible: { type: integer }
-        id_sucursal_sugerida: { type: integer, nullable: true }
-
-    RespuestaValidacion:
-      type: object
-      properties:
-        id_receta: { type: integer }
-        estado_sugerido:
-          type: string
-          enum: ["VALIDADA","RECHAZADA","PARCIAL"]
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/ItemValidacion" }
-
-    ResultadoDispensacion:
-      type: object
-      properties:
-        ok: { type: boolean }
-        id_receta: { type: integer }
-        estado_final:
-          type: string
-          enum: ["DISPENSADA","RECHAZADA","PARCIAL"]
-        movimientos:
-          type: array
-          items:
-            type: object
-            properties:
-              id_sucursal: { type: integer }
-              id_producto: { type: string }
-              tipo: { type: string, enum: ["EGRESO","ENTRADA"] }
-              cantidad: { type: integer }
-        correlation_id: { type: string }
-        message: { type: string }
-        details:
-          type: array
-          items: { type: object }
+  /sugerencias/reposicion:
+    get:
+      tags: [Sugerencias]
+      summary: Top productos con quiebre por distrito (MVP)
+      parameters:
+        - { name: distrito, in: query, required: true, schema: { type: string } }
+        - { name: top,      in: query, required: false, schema: { type: integer, default: 20 } }
+      responses:
+        "200": { description: OK }
+        "400": { description: Bad Request }
+        "502": { description: Downstream error }
