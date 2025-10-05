@@ -14,7 +14,6 @@ spring:
     properties:
       hibernate.jdbc.time_zone: UTC
       hibernate.format_sql: true
-
   mvc:
     throw-exception-if-no-handler-found: true
 
@@ -25,16 +24,18 @@ springdoc:
   api-docs:
     enabled: true
   swagger-ui:
+    # el UI vive aquí
     path: /docs
-    # 👇 Deja el buscador vacío y NO muestra el link debajo del título
-    disable-swagger-default-url: true
-    # (IMPORTANTE) No pongas "url:" aquí. El spec seguirá disponible en /inventario/openapi/inventario.yaml
+    # y carga tu YAML estático por defecto
+    url: /openapi/inventario.yaml
+    # deja el buscador con la URL por defecto (opcional)
+    disable-swagger-default-url: false
 
-# Directorio donde sirves el YAML estático
+# donde montas el YAML dentro del contenedor
 docs:
   dir: ${DOCS_DIR:/app/docs}
 
-# 🔗 Config de integración con Catálogo (se lee de variables de entorno)
+# (sigue igual) integración con Catálogo
 catalogo:
   base-url: ${CATALOGO_BASE_URL:http://localhost:8084/catalogo}
   validate-product: ${CATALOGO_VALIDATE_PRODUCT:true}
