@@ -83,20 +83,17 @@ class Dispensacion(Base):
 
 Base.metadata.create_all(engine)
 
-# =============== FastAPI ===============
+# ===== FastAPI =====
 docs_url    = f"{BASE_PATH}/docs" if BASE_PATH else "/docs"
 openapi_url = f"{BASE_PATH}/openapi.json" if BASE_PATH else "/openapi.json"
 
 app = FastAPI(
-    title="PharmaTrack · Recetas (MySQL + FastAPI)",   # [Doc]
-    version="1.1.0",                                    # [Doc]
-    description=(
-        "Registra **recetas**, sus **líneas** y **dispensaciones**.\n\n"
-        "- Valida *id_sucursal* contra **Inventario**.\n"
-        "- Valida *id_producto* contra **Catálogo**.\n"
-        "- Fechas en **UTC**; filtros `desde`/`hasta` inclusive."
-    ),  # [Doc]
-    docs_url=docs_url, redoc_url=None, openapi_url=openapi_url
+    title="Recetas y Dispensaciones API",  # <- nuevo título
+    version="1.1.1",
+    description="",                        # <- vacío para que no muestre el bloque de bullets
+    docs_url=docs_url,
+    redoc_url=None,
+    openapi_url=openapi_url,
 )
 
 cors_origins = os.getenv("CORS_ORIGINS", "*")
