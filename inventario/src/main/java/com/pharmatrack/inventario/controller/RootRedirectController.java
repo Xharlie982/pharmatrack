@@ -1,0 +1,16 @@
+package com.pharmatrack.inventario.controller;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+@Controller
+@RequestMapping("/")
+public class RootRedirectController {
+
+    // dentro del BASE_PATH (/inventario), "/" redirige a /inventario/docs
+    @GetMapping({"", "/"})
+    public String index() {
+        return "redirect:/docs";
+    }
+}
