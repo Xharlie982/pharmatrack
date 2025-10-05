@@ -1,10 +1,12 @@
 openapi: 3.0.3
 info:
   title: Recetas & Dispensación API
-  version: "1.0.0"
+  version: "1.0.1"
   description: |
     Microservicio de **Recetas (MySQL + FastAPI)** para PharmaTrack.
     Endpoints para crear/leer recetas, agregar líneas y registrar dispensaciones.
+    - `POST /recetas` valida `id_sucursal` contra **Inventario**.
+    - `POST /recetas/{id}/detalle` valida `id_producto` contra **Catálogo**.
     Health check en `/healthz` para el ALB.
 
 servers:
@@ -12,15 +14,15 @@ servers:
     variables:
       host:
         default: localhost
-        description: DNS/IP para pruebas locales o el DNS del ALB en prod.
-        enum: [localhost, alb_dns_name]   # reemplaza alb_dns_name
+        description: DNS/IP local o DNS del ALB en prod.
+        enum: [localhost, alb_dns_name]
       port:
         default: "8083"
 
 tags:
   - name: Health
   - name: Recetas
-  - name: Dispensaciones
+  - name: Dispensasiones
 
 paths:
   /healthz:
@@ -38,7 +40,7 @@ paths:
   /recetas:
     post:
       tags: [Recetas]
-      summary: Crear receta
+      summary: Crear receta (valida sucursal en Inventario)
       requestBody:
         required: true
         content:
@@ -62,15 +64,12 @@ paths:
         - in: query
           name: estado
           schema: { type: string, enum: [NUEVA, VALIDADA, DISPENSADA, ANULADA] }
-          description: Filtra por estado
         - in: query
           name: desde
           schema: { type: string, format: date-time }
-          description: Fecha/hora mínima (UTC)
         - in: query
           name: hasta
           schema: { type: string, format: date-time }
-          description: Fecha/hora máxima (UTC)
       responses:
         "200":
           description: OK
@@ -104,7 +103,7 @@ paths:
   /recetas/{id_receta}/detalle:
     post:
       tags: [Recetas]
-      summary: Agregar/actualizar línea de receta (upsert por id_producto)
+      summary: Agregar/actualizar línea (valida producto en Catálogo)
       parameters:
         - in: path
           name: id_receta
@@ -132,7 +131,7 @@ paths:
 
   /dispensaciones:
     post:
-      tags: [Dispensaciones]
+      tags: [Dispensasiones]
       summary: Registrar dispensación
       requestBody:
         required: true
@@ -210,8 +209,6 @@ components:
           type: integer
           minimum: 0
           nullable: true
-          description: |
-            Total dispensado en la operación (puede ser null si se registra por líneas en otro flujo).
 
     Dispensacion:
       type: object

@@ -9,8 +9,30 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Integer, String, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Mapped, mapped_column
 
-# ===== Config DB =====
+# --- HTTP client para validaciones externas ---
+import httpx
+
+def _as_bool(v: Optional[str], default: bool = True) -> bool:
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "t", "yes", "y")
+
+# ===== Config =====
 DB_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:pass@127.0.0.1:3306/recetas")
+BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # ej: "/recetas"
+
+CATALOGO_BASE_URL = os.getenv("CATALOGO_BASE_URL", "http://localhost:8084/catalogo").rstrip("/")
+INVENTARIO_BASE_URL = os.getenv("INVENTARIO_BASE_URL", "http://localhost:8082/inventario").rstrip("/")
+
+VALIDATE_PRODUCTO = _as_bool(os.getenv("VALIDATE_PRODUCTO", "1"), True)
+VALIDATE_SUCURSAL = _as_bool(os.getenv("VALIDATE_SUCURSAL", "1"), True)
+FAIL_CLOSED = _as_bool(os.getenv("FAIL_CLOSED", "1"), True)  # error llamando a otros svcs => 502
+
+HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "3.0"))
+
+http_client = httpx.Client(timeout=HTTP_TIMEOUT)
+
+# ===== DB =====
 engine = create_engine(DB_URL, pool_pre_ping=True, future=True)
 Session = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 Base = declarative_base()
@@ -22,8 +44,10 @@ class Receta(Base):
     id_sucursal: Mapped[int] = mapped_column(Integer, nullable=False)
     nombre_paciente: Mapped[Optional[str]] = mapped_column(String(100))
     fecha_receta: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    estado: Mapped[str] = mapped_column(Enum('NUEVA','VALIDADA','DISPENSADA','ANULADA'),
-                                        default='NUEVA', nullable=False)
+    estado: Mapped[str] = mapped_column(
+        Enum('NUEVA','VALIDADA','DISPENSADA','ANULADA', name="estado_receta"),
+        default='NUEVA', nullable=False
+    )
     detalle: Mapped[List["RecetaDetalle"]] = relationship(
         backref="receta", cascade="all,delete", passive_deletes=True
     )
@@ -41,11 +65,11 @@ class Dispensacion(Base):
     fecha_dispensacion: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     cantidad_total: Mapped[Optional[int]] = mapped_column(Integer)
 
+# No alterará tu esquema si ya existe
 Base.metadata.create_all(engine)
 
 # ===== FastAPI + CORS =====
-BASE_PATH = (os.getenv("BASE_PATH", "")).rstrip("/")  # "/recetas" o ""
-app = FastAPI(title="Recetas & Dispensación API", version="1.0.0")
+app = FastAPI(title="Recetas & Dispensación API", version="1.0.1")
 
 cors_origins = os.getenv("CORS_ORIGINS", "*")
 origins = [o.strip() for o in cors_origins.split(",")] if cors_origins else ["*"]
@@ -55,25 +79,58 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
+# Cerrar httpx al apagar
+@app.on_event("shutdown")
+def _shutdown():
+    try:
+        http_client.close()
+    except Exception:
+        pass
+
 # Middleware para “strip” del prefijo cuando el LB no reescribe
 from starlette.middleware.base import BaseHTTPMiddleware
 class StripPrefixMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, prefix: str):
-        super().__init__(app)
-        self.prefix = prefix
-
+        super().__init__(app); self.prefix = prefix
     async def dispatch(self, request, call_next):
-        if self.prefix and request.scope.get("path","").startswith(self.prefix):
-            # reescribe path para la app
-            request.scope["path"] = request.scope["path"][len(self.prefix):] or "/"
+        path = request.scope.get("path","")
+        if self.prefix and path.startswith(self.prefix):
+            request.scope["path"] = path[len(self.prefix):] or "/"
         elif self.prefix:
-            # si hay prefijo y no coincide, 404
             from starlette.responses import JSONResponse
             return JSONResponse({"detail":"Not found"}, status_code=404)
         return await call_next(request)
 
 if BASE_PATH:
     app.add_middleware(StripPrefixMiddleware, prefix=BASE_PATH)
+
+# ===== Helpers: validaciones externas =====
+def _exists_producto(id_producto: str) -> bool:
+    if not VALIDATE_PRODUCTO:
+        return True
+    url = f"{CATALOGO_BASE_URL}/productos/{id_producto}"
+    try:
+        r = http_client.get(url)
+        if r.status_code == 404: return False
+        return 200 <= r.status_code < 300
+    except httpx.RequestError as e:
+        if FAIL_CLOSED:
+            raise HTTPException(status_code=502, detail=f"Catálogo no disponible: {e}") from e
+        return True
+
+def _exists_sucursal(id_sucursal: int) -> bool:
+    if not VALIDATE_SUCURSAL:
+        return True
+    # Ajusta este path si tu Inventario expone otro para obtener sucursal por ID
+    url = f"{INVENTARIO_BASE_URL}/sucursales/{id_sucursal}"
+    try:
+        r = http_client.get(url)
+        if r.status_code == 404: return False
+        return 200 <= r.status_code < 300
+    except httpx.RequestError as e:
+        if FAIL_CLOSED:
+            raise HTTPException(status_code=502, detail=f"Inventario no disponible: {e}") from e
+        return True
 
 # ===== Schemas =====
 class RecetaCreate(BaseModel):
@@ -95,6 +152,8 @@ def healthz():
 
 @app.post("/recetas", status_code=201)
 def crear_receta(body: RecetaCreate):
+    if not _exists_sucursal(body.id_sucursal):
+        raise HTTPException(400, f"Sucursal {body.id_sucursal} no existe")
     with Session() as s:
         r = Receta(id_sucursal=body.id_sucursal, nombre_paciente=body.nombre_paciente)
         s.add(r); s.commit(); s.refresh(r)
@@ -136,18 +195,24 @@ def obtener_receta(id_receta: int):
 
 @app.post("/recetas/{id_receta}/detalle", status_code=201)
 def agregar_linea(id_receta: int, body: LineaCreate):
+    if not _exists_producto(body.id_producto):
+        raise HTTPException(400, f"Producto {body.id_producto} no existe")
     with Session() as s:
         if not s.get(Receta, id_receta): raise HTTPException(404, "Receta no existe")
         d = RecetaDetalle(id_receta=id_receta, id_producto=body.id_producto, cantidad=body.cantidad)
         s.merge(d); s.commit()
-        return {"ok": True}
+        return {"ok": True, "message": "Línea agregada/actualizada"}
 
 @app.post("/dispensaciones", status_code=201)
 def registrar_dispensacion(body: DispensacionCreate):
     with Session() as s:
-        if not s.get(Receta, body.id_receta): raise HTTPException(404, "Receta no existe")
+        r = s.get(Receta, body.id_receta)
+        if not r: raise HTTPException(404, "Receta no existe")
         x = Dispensacion(id_receta=body.id_receta, cantidad_total=body.cantidad_total)
-        s.add(x); s.commit(); s.refresh(x)
+        s.add(x)
+        if r.estado != "DISPENSADA":
+            r.estado = "DISPENSADA"
+        s.commit(); s.refresh(x)
         return {
             "id": x.id, "id_receta": x.id_receta,
             "fecha_dispensacion": x.fecha_dispensacion, "cantidad_total": x.cantidad_total

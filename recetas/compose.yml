@@ -7,6 +7,16 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       SERVE_DOCS: "1"
       BASE_PATH: ${RECETAS_BASE_PATH:-}
+
+      # URLs hacia los otros microservicios vía ALB
+      CATALOGO_BASE_URL: "http://${ALB_DNS}${CATALOGO_BASE_PATH}"
+      INVENTARIO_BASE_URL: "http://${ALB_DNS}${INVENTARIO_BASE_PATH}"
+
+      # toggles opcionales
+      # VALIDATE_PRODUCTO: ${VALIDATE_PRODUCTO:-1}
+      # VALIDATE_SUCURSAL: ${VALIDATE_SUCURSAL:-1}
+      # FAIL_CLOSED: ${FAIL_CLOSED:-1}
+      # HTTP_TIMEOUT: ${HTTP_TIMEOUT:-3.0}
     ports:
       - "8083:8083"
     healthcheck:
