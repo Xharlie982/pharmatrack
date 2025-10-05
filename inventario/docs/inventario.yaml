@@ -2,12 +2,16 @@ openapi: 3.0.3
 info:
   title: Inventario y Sucursales API
   version: "1.2.0"
+
 servers:
   - url: http://{host}:{port}{basePath}
     variables:
-      host: { default: localhost }
-      port: { default: "8082" }
-      basePath: { default: "/inventario" }
+      host:
+        default: localhost
+      port:
+        default: "8082"
+      basePath:
+        default: /inventario
 
 tags:
   - name: Health
@@ -18,7 +22,8 @@ tags:
 paths:
   /healthz:
     get:
-      tags: [Health]
+      tags:
+        - Health
       summary: Health check
       responses:
         "200":
@@ -28,17 +33,21 @@ paths:
               schema:
                 type: object
                 properties:
-                  status: { type: string, example: ok }
+                  status:
+                    type: string
+                    example: ok
 
   /sucursales:
     get:
-      tags: [Sucursales]
+      tags:
+        - Sucursales
       summary: Listar sucursales (filtrable por distrito)
       parameters:
         - in: query
           name: distrito
-          schema: { type: string }
-          description: Filtra por distrito (coincidencia exacta, sin mayúsc/minúsc).
+          schema:
+            type: string
+          description: Filtra por distrito (coincidencia exacta, case-insensitive).
       responses:
         "200":
           description: OK
@@ -50,7 +59,8 @@ paths:
                   $ref: "#/components/schemas/Sucursal"
 
     post:
-      tags: [Sucursales]
+      tags:
+        - Sucursales
       summary: Crear sucursal
       requestBody:
         required: true
@@ -63,19 +73,24 @@ paths:
           description: Creado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Sucursal" }
-        "400": { description: Datos inválidos }
-        "409": { description: Conflicto (ID existente) }
+              schema:
+                $ref: "#/components/schemas/Sucursal"
+        "400":
+          description: Datos inválidos
+        "409":
+          description: Conflicto (ID existente)
 
   /sucursales/{id_sucursal}:
     put:
-      tags: [Sucursales]
+      tags:
+        - Sucursales
       summary: Actualizar datos de una sucursal
       parameters:
         - in: path
           name: id_sucursal
           required: true
-          schema: { type: integer }
+          schema:
+            type: integer
       requestBody:
         required: true
         content:
@@ -87,42 +102,33 @@ paths:
           description: Actualizado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Sucursal" }
-        "400": { description: Datos inválidos }
-        "404": { description: No existe }
-
-    delete:
-      tags: [Sucursales]
-      summary: Eliminar sucursal (protegido)
-      description: >
-        Elimina la sucursal **solo si no tiene referencias** en `stock` ni `movimiento_stock`.  
-        Si existen referencias, responde **409**.
-      parameters:
-        - in: path
-          name: id_sucursal
-          required: true
-          schema: { type: integer }
-      responses:
-        "204": { description: Eliminado }
-        "404": { description: No existe }
-        "409": { description: No se puede eliminar: sucursal en uso }
+              schema:
+                $ref: "#/components/schemas/Sucursal"
+        "400":
+          description: Datos inválidos
+        "404":
+          description: No existe
 
   /stock:
     get:
-      tags: [Stocks]
+      tags:
+        - Stocks
       summary: Listar stock (filtrable)
       parameters:
         - in: query
           name: id_producto
-          schema: { type: string }
+          schema:
+            type: string
           description: ID canónico del producto (Catálogo).
         - in: query
           name: id_sucursal
-          schema: { type: integer }
+          schema:
+            type: integer
           description: ID de sucursal.
         - in: query
           name: distrito
-          schema: { type: string }
+          schema:
+            type: string
           description: Filtra por distrito (usa sucursales del distrito).
       responses:
         "200":
@@ -131,50 +137,67 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/StockItem" }
+                items:
+                  $ref: "#/components/schemas/StockItem"
 
     patch:
-      tags: [Stocks]
+      tags:
+        - Stocks
       summary: Ajuste de stock (positivo/negativo) para un producto en una sucursal
-      description: >
-        **Preferido:** enviar `ajuste` (entero, puede ser negativo).  
-        **Compatibilidad:** también se admite `delta` (deprecado).
+      description: |
+        Preferido: campo `ajuste` (entero, puede ser negativo).
+        Compatibilidad: también se admite `delta` (deprecado).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [id_sucursal, id_producto, ajuste]
+              required:
+                - id_sucursal
+                - id_producto
+                - ajuste
               properties:
-                id_sucursal: { type: integer }
-                id_producto: { type: string }
-                ajuste: { type: integer, description: "Variación de stock. Puede ser negativa." }
+                id_sucursal:
+                  type: integer
+                id_producto:
+                  type: string
+                ajuste:
+                  type: integer
+                  description: Variación de stock. Puede ser negativa.
                 delta:
                   type: integer
-                  description: "Alias legado de 'ajuste'."
+                  description: Alias legado de 'ajuste'.
                   deprecated: true
-                motivo: { type: string, nullable: true }
+                motivo:
+                  type: string
+                  nullable: true
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/StockItem" }
-        "400": { description: Stock insuficiente o datos inválidos }
-        "404": { description: No existe stock (o sucursal/producto) }
+              schema:
+                $ref: "#/components/schemas/StockItem"
+        "400":
+          description: Stock insuficiente o datos inválidos
+        "404":
+          description: No existe stock (o sucursal/producto)
 
   /movimientos:
     get:
-      tags: [Movimientos]
+      tags:
+        - Movimientos
       summary: Listar movimientos de stock
       parameters:
         - in: query
           name: producto_id
-          schema: { type: string }
+          schema:
+            type: string
         - in: query
           name: sucursal_id
-          schema: { type: integer }
+          schema:
+            type: integer
       responses:
         "200":
           description: OK
@@ -182,13 +205,15 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Movimiento" }
+                items:
+                  $ref: "#/components/schemas/Movimiento"
 
     post:
-      tags: [Movimientos]
+      tags:
+        - Movimientos
       summary: Crear movimiento (ENTRADA/EGRESO) y aplicar al stock
       description: >
-        Si (sucursal, producto) **no existe** y el tipo es **ENTRADA**, se crea
+        Si (sucursal, producto) no existe y el tipo es ENTRADA, se crea
         automáticamente la fila en `stock` con `umbral_reposicion=0`.
       requestBody:
         required: true
@@ -201,63 +226,124 @@ paths:
           description: Creado
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Movimiento" }
-        "400": { description: Stock insuficiente / datos inválidos }
-        "404": { description: No existe (para EGRESO sin stock base) }
+              schema:
+                $ref: "#/components/schemas/Movimiento"
+        "400":
+          description: Stock insuficiente / datos inválidos
+        "404":
+          description: No existe (para EGRESO sin stock base)
 
 components:
   schemas:
     Sucursal:
       type: object
       properties:
-        id_sucursal: { type: integer }
-        nombre: { type: string }
-        distrito: { type: string }
-        direccion: { type: string, nullable: true }
+        id_sucursal:
+          type: integer
+        nombre:
+          type: string
+        distrito:
+          type: string
+        direccion:
+          type: string
+          nullable: true
 
     SucursalCreate:
       type: object
-      required: [id_sucursal, nombre, distrito, direccion]
+      required:
+        - id_sucursal
+        - nombre
+        - distrito
+        - direccion
       properties:
-        id_sucursal: { type: integer, minimum: 1 }
-        nombre: { type: string, minLength: 1 }
-        distrito: { type: string, minLength: 1 }
-        direccion: { type: string, minLength: 1 }
+        id_sucursal:
+          type: integer
+          minimum: 1
+        nombre:
+          type: string
+          minLength: 1
+        distrito:
+          type: string
+          minLength: 1
+        direccion:
+          type: string
+          minLength: 1
 
     SucursalUpdate:
       type: object
-      required: [nombre, distrito, direccion]
+      required:
+        - nombre
+        - distrito
+        - direccion
       properties:
-        nombre: { type: string, minLength: 1 }
-        distrito: { type: string, minLength: 1 }
-        direccion: { type: string, minLength: 1 }
+        nombre:
+          type: string
+          minLength: 1
+        distrito:
+          type: string
+          minLength: 1
+        direccion:
+          type: string
+          minLength: 1
 
     StockItem:
       type: object
       properties:
-        id_sucursal: { type: integer }
-        id_producto: { type: string }
-        stock_actual: { type: integer }
-        umbral_reposicion: { type: integer }
-        fecha_actualizacion: { type: string, format: date-time }
+        id_sucursal:
+          type: integer
+        id_producto:
+          type: string
+        stock_actual:
+          type: integer
+        umbral_reposicion:
+          type: integer
+        fecha_actualizacion:
+          type: string
+          format: date-time
 
     Movimiento:
       type: object
       properties:
-        id: { type: integer }
-        id_sucursal: { type: integer }
-        id_producto: { type: string }
-        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
-        cantidad: { type: integer }
-        fecha_movimiento: { type: string, format: date-time }
-        motivo: { type: string, nullable: true }
+        id:
+          type: integer
+        id_sucursal:
+          type: integer
+        id_producto:
+          type: string
+        tipo_movimiento:
+          type: string
+          enum:
+            - ENTRADA
+            - EGRESO
+        cantidad:
+          type: integer
+        fecha_movimiento:
+          type: string
+          format: date-time
+        motivo:
+          type: string
+          nullable: true
 
     MovimientoCreate:
       type: object
-      required: [id_sucursal, id_producto, tipo_movimiento, cantidad]
+      required:
+        - id_sucursal
+        - id_producto
+        - tipo_movimiento
+        - cantidad
       properties:
-        id_sucursal: { type: integer }
-        id_producto: { type: string }
-        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
-        cantidad: { type: integer, minimum: 1 }
-        motivo: { type: string, nullable: true }
+        id_sucursal:
+          type: integer
+        id_producto:
+          type: string
+        tipo_movimiento:
+          type: string
+          enum:
+            - ENTRADA
+            - EGRESO
+        cantidad:
+          type: integer
+          minimum: 1
+        motivo:
+          type: string
+          nullable: true
