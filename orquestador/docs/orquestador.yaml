@@ -1,17 +1,47 @@
 openapi: 3.0.3
 info:
   title: Orquestador de Disponibilidad API
-  version: "1.0.0"
+  version: "1.1.0"
 servers:
-  - url: "{scheme}://{host}:{port}"
+  - url: http://{host}{basePath}
     variables:
-      scheme: { default: http }
-      host:   { default: localhost }
-      port:   { default: "8085" }
+      host:
+        default: lb-prod-carlosalith-1509980544.us-east-1.elb.amazonaws.com
+      basePath:
+        default: /orquestador
+
+tags:
+  - name: Health
+  - name: Disponibilidad
+  - name: Recetas
 
 paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, example: ok } }
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness (ping a servicios downstream)
+      responses:
+        "200":
+          description: OK
+        "503":
+          description: Downstream no disponible
+
   /disponibilidad:
     get:
+      tags: [Disponibilidad]
       summary: Disponibilidad por producto y zona
       parameters:
         - in: query
@@ -36,9 +66,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/SucursalStock"
+        "400": { description: Faltan parámetros }
+        "502": { description: Error en servicios downstream }
 
   /recetas/{id_receta}/validacion:
     get:
+      tags: [Recetas]
       summary: Validar disponibilidad de una receta
       parameters:
         - in: path
@@ -52,6 +85,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RespuestaValidacion"
+        "404": { description: Receta no encontrada }
+        "502": { description: Downstream error }
+
+  /dispensar:
+    post:
+      tags: [Recetas]
+      summary: Dispensar una receta (coordina movimientos y creación de dispensación)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ id_receta ]
+              properties:
+                id_receta: { type: integer }
+                idempotency_key:
+                  type: string
+                  description: Recomendado para reintentos seguros
+      responses:
+        "200":
+          description: Dispensación efectuada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultadoDispensacion"
+        "409": { description: Stock insuficiente }
+        "422": { description: Receta sin líneas o datos inválidos }
+        "502": { description: Downstream error con compensación }
+        "504": { description: Timeout coordinando servicios }
 
 components:
   schemas:
@@ -61,14 +124,16 @@ components:
         _id: { type: string }
         nombre: { type: string }
         requiere_receta: { type: boolean }
+
     SucursalStock:
       type: object
       properties:
         id_sucursal: { type: integer }
         nombre: { type: string }
         distrito: { type: string }
-        cantidad_actual: { type: integer }
+        stock_actual: { type: integer }
         umbral_reposicion: { type: integer }
+
     ItemValidacion:
       type: object
       properties:
@@ -76,6 +141,7 @@ components:
         solicitado: { type: integer }
         disponible: { type: integer }
         id_sucursal_sugerida: { type: integer, nullable: true }
+
     RespuestaValidacion:
       type: object
       properties:
@@ -86,3 +152,26 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/ItemValidacion" }
+
+    ResultadoDispensacion:
+      type: object
+      properties:
+        ok: { type: boolean }
+        id_receta: { type: integer }
+        estado_final:
+          type: string
+          enum: ["DISPENSADA","RECHAZADA","PARCIAL"]
+        movimientos:
+          type: array
+          items:
+            type: object
+            properties:
+              id_sucursal: { type: integer }
+              id_producto: { type: string }
+              tipo: { type: string, enum: ["EGRESO","ENTRADA"] }
+              cantidad: { type: integer }
+        correlation_id: { type: string }
+        message: { type: string }
+        details:
+          type: array
+          items: { type: object }
