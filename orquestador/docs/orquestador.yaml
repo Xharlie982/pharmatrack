@@ -1,365 +1,106 @@
 openapi: 3.0.3
-info:
-  title: Orquestador API
-  version: "1.0.0"
-  description: |
-    API de orquestación para consultar disponibilidad y validar recetas
-    coordinando **Catálogo**, **Inventario** y **Recetas**.
+info: { title: Orquestador API, version: "1.3.0" }
 
 servers:
-  # Se sirve detrás del ALB con base path /orquestador
-  - url: /orquestador
+  - url: http://{host}:{port}{basePath}
+    variables:
+      host:     { default: localhost }
+      port:     { default: "8085" }
+      basePath: { default: /orquestador }
 
 tags:
   - name: Health
   - name: Disponibilidad
-  - name: Productos
   - name: Recetas
 
 paths:
   /healthz:
     get:
       tags: [Health]
-      summary: Health check
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Health'
+      summary: Liveness
+      responses: { "200": { description: OK } }
 
   /readyz:
     get:
       tags: [Health]
-      summary: Readiness (verifica dependencias aguas abajo)
+      summary: Readiness (ping a downstreams)
       responses:
-        "200":
-          description: Ready
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Ready'
-        "503":
-          description: Algún servicio no responde
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+        "200": { description: OK }
+        "503": { description: Downstream no disponible }
 
   /disponibilidad:
     get:
       tags: [Disponibilidad]
-      summary: Buscar disponibilidad por producto o por texto
+      summary: Disponibilidad por producto y zona
       description: >
-        Debes enviar **distrito** y **uno de**: `producto` (ID canónico del catálogo) o
-        `busqueda` (texto libre).  
-        `stock_minimo` filtra sucursales cuyo stock sea al menos ese valor (por defecto 1).
+        Use **producto** (ID exacto) o **busqueda** (texto libre Catálogo).
+        Compatibilidad: `productoId`, `q`, `minStock` también funcionan.
       parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
         - name: producto
           in: query
-          description: ID canónico del producto (del Catálogo)
           required: false
           schema: { type: string }
+          description: ID canónico del producto (alias aceptado: **productoId**).
         - name: busqueda
           in: query
-          description: Texto de búsqueda (alias aceptado: `q`)
           required: false
           schema: { type: string }
+          description: Texto libre para buscar en Catálogo (alias aceptado: **q**).
         - name: distrito
           in: query
-          description: Distrito a filtrar (obligatorio)
           required: true
           schema: { type: string }
         - name: stock_minimo
           in: query
-          description: Stock mínimo por sucursal para ser incluido (default 1)
           required: false
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
+          schema: { type: integer, default: 1 }
+          description: Filtra sucursales con stock >= a este valor (alias aceptado: **minStock**).
       responses:
-        "200":
-          description: Resultado de disponibilidad
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DisponibilidadResponse'
-              examples:
-                ok:
-                  value:
-                    items:
-                      - producto:
-                          _id: "10"
-                          nombre: "gloranta"
-                        sucursales:
-                          - id_sucursal: 9
-                            distrito: "barranco"
-                            stock_actual: 10
-        "400":
-          description: Parámetros inválidos
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        "502":
-          description: Error aguas abajo
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        "200": { description: OK }
+        "400": { description: Faltan parámetros }
+        "502": { description: Downstream error }
 
   /ficha-producto/{producto}:
     get:
-      tags: [Productos]
-      summary: Ficha de producto + agregados de stock
+      tags: [Disponibilidad]
+      summary: Ficha (Catálogo + agregados de stock)
       parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
         - name: producto
           in: path
           required: true
-          description: ID canónico del producto
           schema: { type: string }
       responses:
-        "200":
-          description: Ficha con agregados
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FichaProductoResponse'
-              examples:
-                ejemplo:
-                  value:
-                    producto:
-                      _id: "10"
-                      nombre: "gloranta"
-                      codigo_atc: "777"
-                      requiere_receta: true
-                      habilitado: true
-                    agregados:
-                      stock_por_distrito:
-                        "N/A": 10
-        "404":
-          description: No existe el producto
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        "502":
-          description: Error aguas abajo
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        "200": { description: OK }
+        "404": { description: Not Found }
+        "502": { description: Downstream error }
 
   /receta/validar:
     post:
       tags: [Recetas]
-      summary: Pre-validar stock de una receta
-      description: |
-        Calcula si hay stock suficiente en la **sucursal de la receta** para cada línea.  
-        Devuelve 200 si todas las líneas cumplen, 207 si es parcial o insuficiente.
-      parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
+      summary: Pre-validar stock para una receta (no escribe nada)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [id_receta]
+              required: [ id_receta ]
               properties:
-                id_receta:
-                  type: integer
-                  minimum: 1
-            example: { id_receta: 1 }
+                id_receta: { type: integer }
       responses:
-        "200":
-          description: Validación OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidacionPost' }
-              examples:
-                ok:
-                  value:
-                    id_receta: 1
-                    items:
-                      - id_producto: "10"
-                        solicitado: 5
-                        disponible: 15
-                        ok: true
-                    estado_sugerido: "VALIDADA"
-        "207":
-          description: Parcial/insuficiente
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidacionPost' }
-        "400":
-          description: Parámetros inválidos
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        "502":
-          description: Error aguas abajo
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        "200": { description: OK (todo disponible) }
+        "207": { description: Parcial (algunos ítems faltan) }
+        "400": { description: Bad Request }
+        "404": { description: Receta no encontrada }
+        "502": { description: Downstream error }
 
   /receta/{id}/validacion:
     get:
       tags: [Recetas]
-      summary: Ver validación calculada (solo lectura)
-      description: |
-        Consulta receta en **Recetas** y stock **global** en Inventario
-        (no solo por sucursal) para sugerir sucursal que cubra cada línea.
+      summary: Ver la validación calculada
       parameters:
-        - $ref: '#/components/parameters/XCorrelationId'
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
+        - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ValidacionGet' }
-              examples:
-                ejemplo:
-                  value:
-                    id_receta: 1
-                    estado_sugerido: "VALIDADA"
-                    items:
-                      - id_producto: "10"
-                        solicitado: 5
-                        disponible: 10
-                        id_sucursal_sugerida: 9
-        "502":
-          description: Error aguas abajo
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-components:
-  parameters:
-    XCorrelationId:
-      name: X-Correlation-Id
-      in: header
-      required: false
-      description: Id de correlación para trazas distribuidas.
-      schema: { type: string }
-
-  schemas:
-    Health:
-      type: object
-      properties:
-        status: { type: string, example: ok }
-    Ready:
-      type: object
-      properties:
-        status: { type: string, example: ready }
-
-    Error:
-      type: object
-      properties:
-        code:   { type: string, example: DOWNSTREAM_ERROR }
-        message:{ type: string }
-        details:{ type: string }
-
-    Producto:
-      description: Producto del Catálogo (campos relevantes)
-      type: object
-      properties:
-        _id: { type: string }
-        nombre: { type: string }
-        codigo_atc: { type: string, nullable: true }
-        requiere_receta: { type: boolean, nullable: true }
-        habilitado: { type: boolean, nullable: true }
-        keywords:
-          type: array
-          items: { type: string }
-          nullable: true
-        variantes:
-          type: array
-          nullable: true
-          items:
-            type: object
-            properties:
-              codigo_barras: { type: string }
-              forma_farmaceutica: { type: string, nullable: true }
-              concentracion_dosis: { type: string, nullable: true }
-              unidades_por_paquete: { type: integer, nullable: true }
-
-    StockSucursal:
-      type: object
-      properties:
-        id_sucursal: { type: integer, example: 9 }
-        distrito: { type: string, example: barranco }
-        stock_actual: { type: integer, example: 10 }
-
-    DisponibilidadItem:
-      type: object
-      properties:
-        producto: { $ref: '#/components/schemas/Producto' }
-        sucursales:
-          type: array
-          items: { $ref: '#/components/schemas/StockSucursal' }
-
-    DisponibilidadResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/DisponibilidadItem' }
-
-    FichaProductoResponse:
-      type: object
-      properties:
-        producto: { $ref: '#/components/schemas/Producto' }
-        agregados:
-          type: object
-          properties:
-            stock_por_distrito:
-              type: object
-              additionalProperties:
-                type: integer
-              example:
-                "N/A": 10
-
-    ValidacionLineaPost:
-      type: object
-      properties:
-        id_producto: { type: string }
-        solicitado:  { type: integer }
-        disponible:  { type: integer }
-        ok:          { type: boolean }
-
-    ValidacionPost:
-      type: object
-      properties:
-        id_receta: { type: integer }
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/ValidacionLineaPost' }
-        estado_sugerido:
-          type: string
-          enum: [VALIDADA, PARCIAL, RECHAZADA]
-
-    ValidacionLineaGet:
-      type: object
-      properties:
-        id_producto: { type: string }
-        solicitado:  { type: integer }
-        disponible:  { type: integer }
-        id_sucursal_sugerida:
-          type: integer
-          nullable: true
-
-    ValidacionGet:
-      type: object
-      properties:
-        id_receta: { type: integer }
-        estado_sugerido:
-          type: string
-          enum: [VALIDADA, PARCIAL, RECHAZADA]
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/ValidacionLineaGet' }
+        "200": { description: OK }
+        "404": { description: Not Found }
+        "502": { description: Downstream error }
