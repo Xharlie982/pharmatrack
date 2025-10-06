@@ -1,79 +1,126 @@
-﻿import os, time
+﻿import os
+import time
 from typing import List, Dict, Any, Optional
+
 import boto3
 from botocore.config import Config
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import RedirectResponse
 
+
+# ===================== Config =====================
 AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 ATHENA_DB: str = os.getenv("ATHENA_DB", "pharmatrack_raw")
-ATHENA_OUTPUT: str = os.getenv("ATHENA_OUTPUT", "s3://pharmatrack-query-results/")
-BASE_PATH = (os.getenv("BASE_PATH","")).rstrip("/")
+ATHENA_OUTPUT: str = os.getenv("ATHENA_OUTPUT", "s3://resultados-athena-g6/")
+
+# BASE_PATH viene de tu .env como ANALITICO_BASE_PATH=/analitico
+_raw_prefix = (os.getenv("BASE_PATH", "")).strip()
+def _normalize_prefix(p: str) -> str:
+    if not p:
+        return ""
+    p = p.strip()
+    if not p.startswith("/"):
+        p = "/" + p
+    return p.rstrip("/")
+
+BASE_PATH: str = _normalize_prefix(_raw_prefix)
 
 _cors = os.getenv("CORS_ORIGINS", "*")
 ALLOW_ORIGINS: List[str] = [o.strip() for o in _cors.split(",")] if _cors else ["*"]
 
-athena = boto3.client("athena", region_name=AWS_REGION, config=Config(retries={"max_attempts": 5, "mode": "adaptive"}))
-app = FastAPI(title="API Analítica (Athena)", version="1.0.0")
+athena = boto3.client(
+    "athena",
+    region_name=AWS_REGION,
+    config=Config(retries={"max_attempts": 5, "mode": "adaptive"})
+)
 
-from starlette.middleware.base import BaseHTTPMiddleware
-class StripPrefixMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, prefix: str):
-        super().__init__(app); self.prefix = prefix
-    async def dispatch(self, request, call_next):
-        if self.prefix and request.scope.get("path","").startswith(self.prefix):
-            request.scope["path"] = request.scope["path"][len(self.prefix):] or "/"
-        elif self.prefix:
-            from starlette.responses import JSONResponse
-            return JSONResponse({"detail":"Not found"}, status_code=404)
-        return await call_next(request)
-
-if BASE_PATH:
-    app.add_middleware(StripPrefixMiddleware, prefix=BASE_PATH)
+# root_path hace que FastAPI genere rutas (docs, openapi) con el prefijo del ALB
+app = FastAPI(
+    title="API Analítica (Athena)",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url=None,
+    openapi_url="/openapi.json",
+    root_path=BASE_PATH or ""
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOW_ORIGINS, allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=ALLOW_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
+
+# ===================== Helpers =====================
 def run_query(sql: str) -> List[Dict[str, Any]]:
-    qid = athena.start_query_execution(
+    """
+    Ejecuta una consulta en Athena y retorna una lista de dicts (column -> valor).
+    Requiere que ATHENA_OUTPUT apunte a un bucket/prefijo válido.
+    """
+    q = athena.start_query_execution(
         QueryString=sql,
         QueryExecutionContext={"Database": ATHENA_DB},
         ResultConfiguration={"OutputLocation": ATHENA_OUTPUT},
-    )["QueryExecutionId"]
+    )
+    qid = q["QueryExecutionId"]
+
+    # Espera activa simple
     while True:
-        status = athena.get_query_execution(QueryExecutionId=qid)["QueryExecution"]["Status"]["State"]
-        if status in ("SUCCEEDED","FAILED","CANCELLED"): break
+        qe = athena.get_query_execution(QueryExecutionId=qid)["QueryExecution"]["Status"]["State"]
+        if qe in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            break
         time.sleep(0.6)
-    if status != "SUCCEEDED":
-        raise HTTPException(status_code=500, detail=f"Athena {status}")
+
+    if qe != "SUCCEEDED":
+        raise HTTPException(status_code=500, detail=f"Athena {qe}")
+
     results = athena.get_query_results(QueryExecutionId=qid)
-    rows = results["ResultSet"]["Rows"]
-    headers = [c["VarCharValue"] for c in rows[0]["Data"]]
-    out: List[Dict[str, Any]] = []
+    rows = results.get("ResultSet", {}).get("Rows", [])
+    if not rows:
+        return []
+
+    headers = [c.get("VarCharValue") for c in rows[0].get("Data", [])]
     def row_to_dict(row) -> Dict[str, Any]:
-        data = row.get("Data", []); obj: Dict[str, Any] = {}
-        for i,h in enumerate(headers):
-            obj[h] = data[i].get("VarCharValue") if i < len(data) else None
-        return obj
-    for r in rows[1:]: out.append(row_to_dict(r))
+        data = row.get("Data", [])
+        out: Dict[str, Any] = {}
+        for i, h in enumerate(headers):
+            out[h] = data[i].get("VarCharValue") if i < len(data) and h is not None else None
+        return out
+
+    out: List[Dict[str, Any]] = [row_to_dict(r) for r in rows[1:]]
     next_token = results.get("NextToken")
     while next_token:
         results = athena.get_query_results(QueryExecutionId=qid, NextToken=next_token)
-        for r in results["ResultSet"]["Rows"]: out.append(row_to_dict(r))
+        for r in results.get("ResultSet", {}).get("Rows", []):
+            out.append(row_to_dict(r))
         next_token = results.get("NextToken")
     return out
 
+
+# ===================== Rutas =====================
+@app.get("/")
+def root_redirect():
+    # Si accedes a http://<host>:8086/analitico → redirige a /analitico/docs
+    target = (BASE_PATH or "") + "/docs"
+    return RedirectResponse(url=target, status_code=302)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
+
 @app.get("/kpi/fill-rate")
-def fill_rate(desde: Optional[str]=None, hasta: Optional[str]=None, distrito: Optional[str]=None):
-    where=[]
+def kpi_fill_rate(desde: Optional[str] = None,
+                  hasta: Optional[str] = None,
+                  distrito: Optional[str] = None):
+    where = []
     if desde: where.append(f"date(r.fecha_receta) >= date('{desde}')")
     if hasta: where.append(f"date(r.fecha_receta) <= date('{hasta}')")
     if distrito: where.append(f"s.distrito = '{distrito}'")
-    where_sql=("WHERE " + " AND ".join(where)) if where else ""
-    sql=f"""
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = f"""
     SELECT date_trunc('day', r.fecha_receta) AS dia, s.distrito,
            SUM(d.cantidad) AS recetado,
            SUM(coalesce(x.cantidad_total,0)) AS dispensado,
@@ -83,15 +130,16 @@ def fill_rate(desde: Optional[str]=None, hasta: Optional[str]=None, distrito: Op
     JOIN sucursal s ON s.id_sucursal=r.id_sucursal
     LEFT JOIN dispensacion x ON x.id_receta=r.id_receta
     {where_sql}
-    GROUP BY 1,2 ORDER BY 1,2
+    GROUP BY 1,2
+    ORDER BY 1,2
     """
     return run_query(sql)
 
 @app.get("/kpi/stockout")
-def stockout(distrito: Optional[str]=None):
+def kpi_stockout(distrito: Optional[str] = None):
     where = [f"s.distrito = '{distrito}'"] if distrito else []
-    where_sql=("WHERE " + " AND ".join(where)) if where else ""
-    sql=f"""
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = f"""
     SELECT s.distrito, st.id_producto,
            SUM(st.stock_actual) AS stock_actual,
            MIN(st.umbral_reposicion) AS umbral_reposicion,
@@ -105,8 +153,8 @@ def stockout(distrito: Optional[str]=None):
     return run_query(sql)
 
 @app.get("/top/quiebres")
-def top_quiebres(limite:int=20):
-    sql=f"""
+def top_quiebres(limite: int = 20):
+    sql = f"""
     SELECT p.codigo_atc, p.nombre, COUNT(*) AS dias_en_alerta
     FROM v_alertas_stockout_diario a
     JOIN catalogo_producto p ON p.id_producto=a.id_producto
@@ -118,7 +166,7 @@ def top_quiebres(limite:int=20):
     return run_query(sql)
 
 @app.get("/kpi/cobertura")
-def cobertura():
+def kpi_cobertura():
     sql = """
     WITH demanda AS (
       SELECT s.id_sucursal, d.id_producto, AVG(d.cantidad) AS demanda_diaria
@@ -135,23 +183,3 @@ def cobertura():
     ORDER BY dias_cobertura ASC NULLS FIRST
     """
     return run_query(sql)
-
-@app.get("/healthz")
-def healthz():
-    return {"status":"ok"}
-
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-if os.getenv("SERVE_DOCS","1") == "1":
-    app.mount("/docs", StaticFiles(directory="docs"), name="docs")
-    SWAGGER_HTML = """
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Swagger</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
-    </head><body><div id="swagger"></div>
-    <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-    <script>window.ui=SwaggerUIBundle({url:'/docs/analitico.yaml',dom_id:'#swagger'});</script>
-    </body></html>
-    """
-    @app.get("/swagger-ui", response_class=HTMLResponse)
-    def swagger_ui():
-        return SWAGGER_HTML

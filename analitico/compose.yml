@@ -7,10 +7,8 @@ services:
       ATHENA_DB: ${ATHENA_DB:-pharmatrack_raw}
       ATHENA_OUTPUT: ${ATHENA_OUTPUT}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      SERVE_DOCS: "1"
       BASE_PATH: ${ANALITICO_BASE_PATH:-}
-    ports:
-      - "8086:8086"
+    ports: ["8086:8086"]
     healthcheck:
       test: ["CMD","wget","-qO-","http://localhost:8086${ANALITICO_BASE_PATH}/healthz"]
       interval: 15s
