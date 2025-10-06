@@ -7,6 +7,7 @@ from botocore.config import Config
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+from fastapi.openapi.utils import get_openapi  # <- necesario para custom_openapi
 
 
 # ===================== Config =====================
@@ -44,6 +45,23 @@ app = FastAPI(
     openapi_url="/openapi.json",
     root_path=BASE_PATH or ""
 )
+
+# ---- Ocultar el selector "Servers" en Swagger (pero seguimos usando root_path) ----
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+        description=None
+    )
+    schema.pop("servers", None)  # <- quita el bloque "servers"
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+# -----------------------------------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -177,7 +195,7 @@ def kpi_cobertura():
       GROUP BY s.id_sucursal, d.id_producto
     )
     SELECT st.id_sucursal, st.id_producto, st.stock_actual, d.demanda_diaria,
-           CASE WHEN d.demanda_diaria>0 THEN st.stock_actual/d.demanda_diaria ELSE NULL END AS dias_cobertura
+           CASE WHEN d.demanda_diaria>0 THEN st.stock_actual/demanda_diaria ELSE NULL END AS dias_cobertura
     FROM stock st
     LEFT JOIN demanda d ON d.id_sucursal=st.id_sucursal AND d.id_producto=st.id_producto
     ORDER BY dias_cobertura ASC NULLS FIRST
