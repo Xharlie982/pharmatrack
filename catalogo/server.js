@@ -5,70 +5,53 @@ import mongoose from "mongoose";
 import YAML from "yamljs";
 import swaggerUi from "swagger-ui-express";
 
-// --------- Config ----------
-const PORT = Number(process.env.PORT || 8084);
+// =======================
+// ====== Configuración ======
+// =======================
+const PORT = Number(process.env.CATALOGO_PORT || 8084);
 const MONGO_URL = process.env.MONGO_URL || "mongodb://localhost:27017/catalogo";
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || "*")
   .split(",")
   .map(s => s.trim())
   .filter(Boolean);
-const SERVE_DOCS = process.env.SERVE_DOCS === "1";
+const SERVE_DOCS = process.env.SERVE_DOCS !== "0";
 
-// Prefijo para funcionar detrás del ALB (ej: "/catalogo")
-const RAW_BASE = (process.env.BASE_PATH || "").trim();
-// normaliza: vacío => "", con barra inicial y sin barra final
+const RAW_BASE = (process.env.CATALOGO_BASE_PATH || "").trim();
 const BASE_PATH = RAW_BASE
   ? (RAW_BASE.startsWith("/") ? RAW_BASE : `/${RAW_BASE}`).replace(/\/+$/, "")
   : "";
 
-// --------- App base ----------
+// =======================
+// ====== App Express y Middlewares ======
+// =======================
 const app = express();
 app.set("trust proxy", true);
 
-// CORS
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin || CORS_ORIGINS.includes("*") || CORS_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS not allowed"), false);
-    },
-    credentials: true
-  })
-);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || CORS_ORIGINS.includes("*") || CORS_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error("CORS not allowed"), false);
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("tiny"));
 
-// --------- Mongo ----------
+// =======================
+// ====== Conexión Mongo ======
+// =======================
 mongoose.set("strictQuery", true);
 mongoose
   .connect(MONGO_URL, { autoIndex: true })
-  .then(() => console.log("[catalogo] Conectado a Mongo"))
+  .then(() => console.log(`[catalogo] Conectado a Mongo`))
   .catch((err) => {
     console.error("[catalogo] Error conectando a Mongo:", err.message);
     process.exit(1);
   });
 
-// --------- Router con prefijo ----------
-const api = express.Router();
-
-// Landing DENTRO del prefijo (p. ej. /catalogo/)
-api.get("/", (req, res) => {
-  if (SERVE_DOCS && req.headers.accept && req.headers.accept.includes("text/html")) {
-    return res.redirect(`${BASE_PATH}/docs`);
-  }
-  return res.json({
-    service: "catalogo",
-    base_path: BASE_PATH || "/",
-    health: `${BASE_PATH || ""}/healthz`,
-    docs: SERVE_DOCS ? `${BASE_PATH || ""}/docs` : null,
-    message: "Bienvenido al microservicio Catálogo"
-  });
-});
-
-// Health
-api.get("/healthz", (_req, res) => res.json({ status: "ok" }));
-
-// --------- Modelos ----------
+// =======================
+// ====== Modelos (Schemas) de Mongoose ======
+// =======================
 const VarianteSchema = new mongoose.Schema(
   {
     codigo_barras: { type: String, required: true },
@@ -85,7 +68,7 @@ const ProductoSchema = new mongoose.Schema(
     nombre: { type: String, required: true },
     codigo_atc: { type: String, default: null },
     requiere_receta: { type: Boolean, default: null },
-    habilitado: { type: Boolean, default: true },
+    activo: { type: Boolean, default: true },
     keywords: { type: [String], default: [] },
     variantes: { type: [VarianteSchema], default: [] },
     creado_en: { type: Date, default: () => new Date() },
@@ -94,17 +77,20 @@ const ProductoSchema = new mongoose.Schema(
   { collection: "productos", versionKey: false }
 );
 
-// Índices
+// --- Índices ---
 ProductoSchema.index({ nombre: "text", keywords: "text" });
-ProductoSchema.index({ codigo_atc: 1 });
-ProductoSchema.index({ requiere_receta: 1 });
-ProductoSchema.index({ habilitado: 1 });
 ProductoSchema.index({ "variantes.codigo_barras": 1 }, { unique: true, sparse: true });
+ProductoSchema.index({ activo: 1 }); // Índice para 'activo'
 
+// --- Hooks ---
 ProductoSchema.pre("save", function (next) {
   this.actualizado_en = new Date();
+  if (!this.creado_en) {
+    this.creado_en = new Date();
+  }
   next();
 });
+
 ProductoSchema.pre("findOneAndUpdate", function (next) {
   this.set({ actualizado_en: new Date() });
   next();
@@ -112,41 +98,46 @@ ProductoSchema.pre("findOneAndUpdate", function (next) {
 
 const Producto = mongoose.model("Producto", ProductoSchema);
 
-// --------- Rutas ----------
+// =======================
+// ====== API Router (Endpoints) ======
+// =======================
+const api = express.Router();
+
+api.get("/", (req, res) => {
+  if (SERVE_DOCS && req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect(`${BASE_PATH}/docs`);
+  }
+  return res.json({
+    service: "catalogo",
+    message: "API de Catálogo de Productos",
+    base_path: BASE_PATH || "/",
+    health: `${BASE_PATH || ""}/healthz`,
+    docs: SERVE_DOCS ? `${BASE_PATH || ""}/docs` : null,
+  });
+});
+
+api.get("/healthz", (_req, res) => res.json({ status: "ok" }));
+
+// [GET /productos] - Listar productos
 api.get("/productos", async (req, res, next) => {
   try {
-    // Nuevos nombres claros
     const {
-      busqueda,
+      keyword,
       codigo_atc,
       requiere_receta,
-      habilitado,
+      activo,
       tamano_pagina,
       pagina
     } = req.query;
 
-    // Compatibilidad hacia atrás (si alguien sigue llamando con los viejos)
-    const legacy = req.query;
-    const _busqueda        = busqueda ?? legacy.texto ?? null;
-    const _codigo_atc      = codigo_atc ?? legacy.atc ?? null;
-    const _requiere_receta = (typeof requiere_receta !== "undefined")
-                              ? requiere_receta
-                              : legacy.rx;
-    const _habilitado      = (typeof habilitado !== "undefined")
-                              ? habilitado
-                              : legacy.habilitado;
-    const _tamano_pagina   = Number(tamano_pagina ?? legacy.limit ?? 50);
-    const _pagina          = Number(pagina ?? (legacy.skip ? (Number(legacy.skip) / _tamano_pagina) + 1 : 1));
-
     const q = {};
-    if (_busqueda) q.$text = { $search: String(_busqueda) };
-    if (_codigo_atc) q.codigo_atc = String(_codigo_atc);
-    if (typeof _requiere_receta !== "undefined") q.requiere_receta = String(_requiere_receta) === "true";
-    if (typeof _habilitado !== "undefined") q.habilitado = String(_habilitado) === "true";
+    if (keyword) q.$text = { $search: String(keyword) };
+    if (codigo_atc) q.codigo_atc = String(codigo_atc);
+    if (typeof requiere_receta !== "undefined") q.requiere_receta = String(requiere_receta) === "true";
+    if (typeof activo !== "undefined") q.activo = String(activo) === "true";
 
-    // paginación: pagina (1-based) -> skip
-    const limit = Math.min(Math.max(_tamano_pagina, 1), 200);
-    const page  = Math.max(_pagina, 1);
+    const limit = Math.min(Math.max(Number(tamano_pagina || 50), 1), 200);
+    const page  = Math.max(Number(pagina || 1), 1);
     const skip  = (page - 1) * limit;
 
     const [items, total] = await Promise.all([
@@ -160,6 +151,7 @@ api.get("/productos", async (req, res, next) => {
   }
 });
 
+// [POST /productos] - Crear un producto
 api.post("/productos", async (req, res, next) => {
   try {
     const created = await Producto.create(req.body);
@@ -169,22 +161,24 @@ api.post("/productos", async (req, res, next) => {
   }
 });
 
+// [GET /productos/:id] - Obtener un producto
 api.get("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findById(req.params.id).lean();
-    if (!doc) return res.status(404).json({ detail: "No existe" });
+    if (!doc) return res.status(404).json({ detail: "Producto no encontrado" });
     res.json(doc);
   } catch (e) {
     next(e);
   }
 });
 
+// [PUT /productos/:id] - Actualizar/Crear un producto
 api.put("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findOneAndUpdate(
       { _id: req.params.id },
       req.body,
-      { new: true, upsert: true }
+      { new: true, upsert: true } 
     ).lean();
     res.json(doc);
   } catch (e) {
@@ -192,56 +186,46 @@ api.put("/productos/:id", async (req, res, next) => {
   }
 });
 
-// Path con nombre claro y compatibilidad con /ean
-api.get("/productos/codigos-barras/:codigo_barras", async (req, res, next) => {
+// [DELETE /productos/:id] - Eliminar un producto
+api.delete("/productos/:id", async (req, res, next) => {
   try {
-    const codigo = req.params.codigo_barras ?? req.params.ean;
-    const doc = await Producto.findOne({ "variantes.codigo_barras": codigo }).lean();
-    if (!doc) return res.status(404).json({ detail: "No existe" });
-    res.json(doc);
+    const result = await Producto.deleteOne({ _id: req.params.id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ detail: "Producto no encontrado" });
+    }
+    res.status(204).send();
   } catch (e) {
     next(e);
   }
 });
 
-// Swagger opcional dentro del prefijo (queda en /<base>/docs)
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
   api.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
 }
 
-// 404 del subrouter
-api.use((_req, res) => res.status(404).json({ detail: "Not found" }));
+api.use((_req, res) => res.status(404).json({ detail: "Not Found in this service" }));
 
-// Monta el subrouter en el BASE_PATH (o raíz si no hay)
+// =======================
+// ====== Montaje y Arranque ======
+// =======================
+
 app.use(BASE_PATH || "/", api);
 
-// Landing FUERA del prefijo (IP:PUERTO/) para pruebas sin ALB
-app.get("/", (req, res) => {
-  const info = {
-    service: "catalogo",
-    base_path: BASE_PATH || "/",
-    health: `${BASE_PATH || ""}/healthz`,
-    docs: SERVE_DOCS ? `${BASE_PATH || ""}/docs` : null,
-    note: "Este endpoint existe solo para pruebas directas por IP/puerto."
-  };
-  // Si el cliente quiere HTML, redirige a docs
-  if (SERVE_DOCS && req.headers.accept && req.headers.accept.includes("text/html")) {
-    return res.redirect(info.docs || info.health);
-  }
-  return res.json(info);
-});
-
-// Manejo de errores
+// Manejador de errores global
 app.use((err, _req, res, _next) => {
   console.error("[catalogo] error:", err.message);
   if (err.name === "MongoServerError" && err.code === 11000) {
-    return res.status(409).json({ detail: "Duplicado", dupKey: err.keyValue });
+    return res.status(409).json({ detail: "Recurso duplicado", dupKey: err.keyValue });
+  }
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({ detail: "Validación fallida", errors: err.errors });
   }
   res.status(500).json({ detail: "Error interno" });
 });
 
-// --------- Server ----------
+// Inicia el servidor
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[catalogo] escuchando en :${PORT} (BASE_PATH="${BASE_PATH || "/"}")`);
+  console.log(`[catalogo] escuchando en http://0.0.0.0:${PORT}`);
+  console.log(`[catalogo] Prefijo de ruta (BASE_PATH): "${BASE_PATH || "/"}"`);
 });

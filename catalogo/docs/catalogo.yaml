@@ -1,24 +1,29 @@
 openapi: 3.0.3
 info:
   title: Catálogo de Productos API
-  version: "1.0.0"
+  version: "1.2.0"
+  description: "Servicio para la gestión centralizada de productos de PharmaTrack."
 
 servers:
-  - url: http://{host}:{port}{basePath}
+  - url: "{basePath}"
     variables:
-      host: { default: localhost }
-      port: { default: "8084" }
+      basePath: { default: "/catalogo" }
+  - url: http://localhost:8084{basePath}
+    variables:
       basePath: { default: "/catalogo" }
 
 tags:
   - name: Health
+    description: Verificación de estado del servicio
   - name: Productos
+    description: Operaciones sobre el catálogo de productos
 
 paths:
   /healthz:
     get:
       tags: [Health]
       summary: Health check
+      description: Endpoint ligero usado por el Balanceador de Carga para verificar que el servicio está activo.
       responses:
         "200":
           description: OK
@@ -27,74 +32,85 @@ paths:
               schema:
                 type: object
                 properties:
-                  status:
-                    type: string
-                    example: ok
+                  status: { type: string, example: ok }
 
   /productos:
     get:
       tags: [Productos]
-      summary: Buscar productos (texto/código ATC/receta/disponibilidad)
+      summary: Listar y buscar productos
+      description: Obtiene una lista paginada de productos con filtros.
       parameters:
         - in: query
-          name: busqueda
+          name: keyword # <-- CAMBIO
           schema: { type: string }
-          description: Nombre del producto, palabras clave o atajos de búsqueda.
+          description: "Texto para buscar en nombre o keywords del producto."
         - in: query
           name: codigo_atc
           schema: { type: string }
-          description: Código ATC del producto.
+          description: "Código ATC del producto."
         - in: query
           name: requiere_receta
           schema: { type: boolean }
-          description: Filtra por si necesita receta.
+          description: "Filtra por si necesita receta."
         - in: query
-          name: habilitado
+          name: activo # <-- CAMBIO
           schema: { type: boolean }
-          description: Filtra por disponibilidad.
+          description: "Filtra por productos activos (habilitados para la venta)."
         - in: query
           name: tamano_pagina
           schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
-          description: Cantidad de resultados por página.
+          description: "Cantidad de resultados por página."
         - in: query
           name: pagina
           schema: { type: integer, default: 1, minimum: 1 }
-          description: Número de página (1 = primera página).
+          description: "Número de página (1-based)."
       responses:
         "200":
-          description: OK
+          description: Lista paginada de productos.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Producto"
+                type: object
+                properties:
+                  total: { type: integer, example: 100 }
+                  pagina: { type: integer, example: 1 }
+                  tamano_pagina: { type: integer, example: 50 }
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Producto"
     post:
       tags: [Productos]
-      summary: Crear producto
+      summary: Crear un nuevo producto
+      description: "Crea un nuevo producto en el catálogo. Los timestamps (creado_en, actualizado_en) son gestionados por el servidor."
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Producto"
+              $ref: "#/components/schemas/ProductoCreate"
       responses:
         "201":
-          description: Creado
+          description: Creado exitosamente
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Producto"
+        "400":
+          description: "Datos de entrada inválidos (Error de Validación)"
+        "409":
+          description: "Conflicto, recurso duplicado (ej: _id o codigo_barras ya existe)"
 
   /productos/{id}:
     get:
       tags: [Productos]
-      summary: Obtener por ID canónico
+      summary: Obtener producto por ID
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string }
+          description: "ID canónico (string) del producto."
       responses:
         "200":
           description: OK
@@ -103,59 +119,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/Producto"
         "404":
-          description: No existe
+          description: Producto no encontrado
     put:
       tags: [Productos]
-      summary: Upsert por ID canónico
+      summary: Actualizar un producto (Upsert)
+      description: "Actualiza un producto por su ID. Si el ID no existe, lo crea (comportamiento Upsert). Los timestamps son gestionados por el servidor."
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string }
+          description: "ID canónico (string) del producto."
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Producto"
+              $ref: "#/components/schemas/ProductoUpdate"
       responses:
         "200":
-          description: OK
+          description: Actualizado o creado exitosamente
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Producto"
-
-  /productos/codigos-barras/{ean}:
-    get:
+    delete:
       tags: [Productos]
-      summary: Buscar por código de barras (variantes)
+      summary: Eliminar un producto
+      description: "Elimina un producto del catálogo usando su ID."
       parameters:
         - in: path
-          name: ean
+          name: id
           required: true
           schema: { type: string }
-          description: Código de barras (EAN/UPC).
+          description: "ID canónico (string) del producto."
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Producto"
+        "204":
+          description: Producto eliminado exitosamente (No Content)
         "404":
-          description: No existe
+          description: Producto no encontrado
 
 components:
   schemas:
     Variante:
       type: object
+      required: [codigo_barras]
       properties:
         codigo_barras: { type: string, description: "Código de barras (EAN/UPC)." }
         forma_farmaceutica: { type: string, nullable: true }
         concentracion_dosis: { type: string, nullable: true }
         unidades_por_paquete: { type: integer, nullable: true }
 
+   
     Producto:
       type: object
       required: [_id, nombre]
@@ -164,7 +179,7 @@ components:
         nombre: { type: string }
         codigo_atc: { type: string, nullable: true }
         requiere_receta: { type: boolean, nullable: true }
-        habilitado: { type: boolean }
+        activo: { type: boolean, default: true }
         keywords:
           type: array
           items: { type: string }
@@ -172,5 +187,40 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Variante"
-        creado_en: { type: string, format: date-time, nullable: true }
-        actualizado_en: { type: string, format: date-time, nullable: true }
+        creado_en: { type: string, format: date-time, readOnly: true }
+        actualizado_en: { type: string, format: date-time, readOnly: true }
+
+    ProductoCreate:
+      type: object
+      required: [_id, nombre]
+      description: "Datos para crear un producto. Timestamps se ignoran."
+      properties:
+        _id: { type: string, description: "ID canónico (string)" }
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        activo: { type: boolean, default: true }
+        keywords:
+          type: array
+          items: { type: string }
+        variantes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variante"
+
+    ProductoUpdate:
+      type: object
+      required: [nombre]
+      description: "Datos para actualizar un producto. _id se toma de la URL. Timestamps se ignoran."
+      properties:
+        nombre: { type: string }
+        codigo_atc: { type: string, nullable: true }
+        requiere_receta: { type: boolean, nullable: true }
+        activo: { type: boolean, default: true }
+        keywords:
+          type: array
+          items: { type: string }
+        variantes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variante"
