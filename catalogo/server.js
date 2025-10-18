@@ -1,4 +1,5 @@
-﻿import express from "express";
+﻿// Fichero: catalogo/server.js
+import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import mongoose from "mongoose";
@@ -28,12 +29,11 @@ const app = express();
 app.set("trust proxy", true);
 
 app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || CORS_ORIGINS.includes("*") || CORS_ORIGINS.includes(origin)) return cb(null, true);
-    return cb(new Error("CORS not allowed"), false);
-  },
+  origin: process.env.CORS_ORIGINS || "*",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true
 }));
+
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("tiny"));
 
@@ -77,12 +77,10 @@ const ProductoSchema = new mongoose.Schema(
   { collection: "productos", versionKey: false }
 );
 
-// --- Índices ---
 ProductoSchema.index({ nombre: "text", keywords: "text" });
 ProductoSchema.index({ "variantes.codigo_barras": 1 }, { unique: true, sparse: true });
-ProductoSchema.index({ activo: 1 }); // Índice para 'activo'
+ProductoSchema.index({ activo: 1 });
 
-// --- Hooks ---
 ProductoSchema.pre("save", function (next) {
   this.actualizado_en = new Date();
   if (!this.creado_en) {
@@ -118,7 +116,8 @@ api.get("/", (req, res) => {
 
 api.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 
-// [GET /productos] - Listar productos
+// --- Rutas CRUD de Productos ---
+
 api.get("/productos", async (req, res, next) => {
   try {
     const {
@@ -151,7 +150,6 @@ api.get("/productos", async (req, res, next) => {
   }
 });
 
-// [POST /productos] - Crear un producto
 api.post("/productos", async (req, res, next) => {
   try {
     const created = await Producto.create(req.body);
@@ -161,7 +159,6 @@ api.post("/productos", async (req, res, next) => {
   }
 });
 
-// [GET /productos/:id] - Obtener un producto
 api.get("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findById(req.params.id).lean();
@@ -172,13 +169,12 @@ api.get("/productos/:id", async (req, res, next) => {
   }
 });
 
-// [PUT /productos/:id] - Actualizar/Crear un producto
 api.put("/productos/:id", async (req, res, next) => {
   try {
     const doc = await Producto.findOneAndUpdate(
       { _id: req.params.id },
       req.body,
-      { new: true, upsert: true } 
+      { new: true, upsert: true }
     ).lean();
     res.json(doc);
   } catch (e) {
@@ -186,7 +182,6 @@ api.put("/productos/:id", async (req, res, next) => {
   }
 });
 
-// [DELETE /productos/:id] - Eliminar un producto
 api.delete("/productos/:id", async (req, res, next) => {
   try {
     const result = await Producto.deleteOne({ _id: req.params.id });
@@ -199,6 +194,7 @@ api.delete("/productos/:id", async (req, res, next) => {
   }
 });
 
+// ---- Swagger UI ----
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
   api.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
@@ -212,7 +208,13 @@ api.use((_req, res) => res.status(404).json({ detail: "Not Found in this service
 
 app.use(BASE_PATH || "/", api);
 
-// Manejador de errores global
+app.use((_req, res) => {
+  res.status(404).json({
+    error: "Ruta no encontrada",
+    message: `Este endpoint no existe. Las rutas válidas para esta API comienzan con ${BASE_PATH || ""}`
+  });
+});
+
 app.use((err, _req, res, _next) => {
   console.error("[catalogo] error:", err.message);
   if (err.name === "MongoServerError" && err.code === 11000) {
@@ -224,7 +226,6 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ detail: "Error interno" });
 });
 
-// Inicia el servidor
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[catalogo] escuchando en http://0.0.0.0:${PORT}`);
   console.log(`[catalogo] Prefijo de ruta (BASE_PATH): "${BASE_PATH || "/"}"`);
