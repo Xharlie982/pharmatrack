@@ -14,8 +14,8 @@ public class StaticDocsConfig {
         return new WebMvcConfigurer() {
             @Override
             public void addResourceHandlers(ResourceHandlerRegistry registry) {
-                // El nombre de la variable aquí debe coincidir con el del parámetro (docsDir)
-                String base = docsDir.endsWith("/") ? docsDir : docsDir + "/"; // <-- ¡LÍNEA CORREGIDA!
+
+                String base = docsDir.endsWith("/") ? docsDir : docsDir + "/";
                 registry.addResourceHandler("/openapi/**")
                         .addResourceLocations("file:" + base);
             }

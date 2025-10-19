@@ -1,25 +1,23 @@
-version: "3.9"
 services:
   recetas:
     build: .
+    container_name: recetas-api
+    ports:
+      - "${RECETAS_PORT:-8083}:8083"
     environment:
+
       MYSQL_URL: ${MYSQL_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
-      BASE_PATH: ${RECETAS_BASE_PATH:-}
+      RECETAS_BASE_PATH: ${RECETAS_BASE_PATH:-/recetas} 
 
-      # URLs hacia los otros MS vía ALB
-      CATALOGO_BASE_URL: "http://${ALB_DNS}${CATALOGO_BASE_PATH}"
-      INVENTARIO_BASE_URL: "http://${ALB_DNS}${INVENTARIO_BASE_PATH}"
+      CATALOGO_BASE_URL: ${CATALOGO_BASE_URL}
+      INVENTARIO_BASE_URL: ${INVENTARIO_BASE_URL}
 
-      # toggles opcionales
-      # VALIDATE_PRODUCTO: ${VALIDATE_PRODUCTO:-1}
-      # VALIDATE_SUCURSAL: ${VALIDATE_SUCURSAL:-1}
-      # FAIL_CLOSED: ${FAIL_CLOSED:-1}
-      # HTTP_TIMEOUT: ${HTTP_TIMEOUT:-3.0}
-    ports:
-      - "8083:8083"
+      VALIDATE_PRODUCTO: "1"
+      VALIDATE_SUCURSAL: "1"
+
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8083${RECETAS_BASE_PATH}/healthz"]
+      test: ["CMD","wget","-qO-","http://localhost:8083${RECETAS_BASE_PATH:-/recetas}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3

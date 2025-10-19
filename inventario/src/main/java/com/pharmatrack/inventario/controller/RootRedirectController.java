@@ -10,7 +10,6 @@ public class RootRedirectController {
 
     @GetMapping({"", "/"})
     public String index() {
-        // Redirige a /docs, que está configurado en application.yml
         return "redirect:/docs";
     }
 }
