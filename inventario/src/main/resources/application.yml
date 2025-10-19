@@ -21,21 +21,11 @@ cors:
   origins: ${CORS_ORIGINS:*}
 
 springdoc:
+  swagger-ui:
+    path: /docs
   api-docs:
     enabled: true
-  swagger-ui:
-    # el UI vive aquí
-    path: /docs
-    # y carga tu YAML estático por defecto
-    url: /openapi/inventario.yaml
-    # deja el buscador con la URL por defecto (opcional)
-    disable-swagger-default-url: false
 
-# donde montas el YAML dentro del contenedor
-docs:
-  dir: ${DOCS_DIR:/app/docs}
-
-# (sigue igual) integración con Catálogo
 catalogo:
   base-url: ${CATALOGO_BASE_URL:http://localhost:8084/catalogo}
   validate-product: ${CATALOGO_VALIDATE_PRODUCT:true}
