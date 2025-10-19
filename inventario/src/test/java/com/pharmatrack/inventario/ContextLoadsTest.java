@@ -10,7 +10,6 @@ import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
 @TestPropertySource(properties = {
-        // Evita autoconfig de DataSource/JPA y usa mocks de repos
         "spring.autoconfigure.exclude=" +
                 "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration," +
                 "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
@@ -23,6 +22,5 @@ class ContextLoadsTest {
 
     @Test
     void contextLoads() {
-        // Si el contexto arranca, el test pasa.
     }
 }

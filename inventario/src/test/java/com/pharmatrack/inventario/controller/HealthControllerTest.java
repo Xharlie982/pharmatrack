@@ -16,7 +16,6 @@ class HealthControllerTest {
 
     @Test
     void health_ok() throws Exception {
-        // IMPORTANTE: la URI incluye el context-path y además lo seteamos en el request
         mvc.perform(get("/inventario/healthz").contextPath("/inventario"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));

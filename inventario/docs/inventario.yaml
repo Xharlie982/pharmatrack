@@ -1,29 +1,29 @@
 openapi: 3.0.3
 info:
   title: Inventario y Sucursales API
-  version: "1.2.0"
+  version: "1.3.0"
+  description: "Microservicio para gestionar sucursales, stock y movimientos de inventario."
 
 servers:
-  - url: http://{host}:{port}{basePath}
+  - url: "{basePath}"
     variables:
-      host:
-        default: localhost
-      port:
-        default: "8082"
       basePath:
         default: /inventario
 
 tags:
   - name: Health
+    description: Verificación de estado
   - name: Sucursales
+    description: Gestión de sucursales
   - name: Stocks
+    description: Consulta y ajuste de stock
   - name: Movimientos
+    description: Historial y registro de movimientos
 
 paths:
   /healthz:
     get:
-      tags:
-        - Health
+      tags: [Health]
       summary: Health check
       responses:
         "200":
@@ -31,36 +31,29 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
+                $ref: '#/components/schemas/HealthStatus'
 
   /sucursales:
     get:
-      tags:
-        - Sucursales
+      tags: [Sucursales]
       summary: Listar sucursales (filtrable por distrito)
       parameters:
         - in: query
           name: distrito
-          schema:
-            type: string
-          description: Filtra por distrito (coincidencia exacta, case-insensitive).
+          schema: { type: string }
+          required: false
+          description: Filtra por distrito (case-insensitive). Si se omite, devuelve todas.
       responses:
         "200":
-          description: OK
+          description: Lista de sucursales.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/Sucursal"
-
     post:
-      tags:
-        - Sucursales
+      tags: [Sucursales]
       summary: Crear sucursal
       requestBody:
         required: true
@@ -76,21 +69,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/Sucursal"
         "400":
-          description: Datos inválidos
+          $ref: '#/components/responses/BadRequest'
         "409":
-          description: Conflicto (ID existente)
+          $ref: '#/components/responses/Conflict'
 
   /sucursales/{id_sucursal}:
+    get:
+      tags: [Sucursales]
+      summary: Obtener sucursal por ID
+      parameters:
+        - in: path
+          name: id_sucursal
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Datos de la sucursal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sucursal"
+        "404":
+          $ref: '#/components/responses/NotFound'
     put:
-      tags:
-        - Sucursales
+      tags: [Sucursales]
       summary: Actualizar datos de una sucursal
       parameters:
         - in: path
           name: id_sucursal
           required: true
-          schema:
-            type: integer
+          schema: { type: integer }
       requestBody:
         required: true
         content:
@@ -105,116 +113,103 @@ paths:
               schema:
                 $ref: "#/components/schemas/Sucursal"
         "400":
-          description: Datos inválidos
+          $ref: '#/components/responses/BadRequest'
         "404":
-          description: No existe
+          $ref: '#/components/responses/NotFound'
 
   /stock:
     get:
-      tags:
-        - Stocks
-      summary: Listar stock (filtrable)
+      tags: [Stocks]
+      summary: Consultar stock (filtrable)
       parameters:
         - in: query
           name: id_producto
-          schema:
-            type: string
-          description: ID canónico del producto (Catálogo).
+          schema: { type: string }
+          required: false
+          description: ID del producto (Catálogo).
+        - in: query
+          name: idProducto
+          schema: { type: string }
+          required: false
+          deprecated: true
         - in: query
           name: id_sucursal
-          schema:
-            type: integer
+          schema: { type: integer }
+          required: false
           description: ID de sucursal.
         - in: query
+          name: idSucursal
+          schema: { type: integer }
+          required: false
+          deprecated: true
+        - in: query
           name: distrito
-          schema:
-            type: string
-          description: Filtra por distrito (usa sucursales del distrito).
+          schema: { type: string }
+          required: false
+          description: Filtra por distrito.
       responses:
         "200":
-          description: OK
+          description: Lista de registros de stock.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/StockItem"
-
     patch:
-      tags:
-        - Stocks
-      summary: Ajuste de stock (positivo/negativo) para un producto en una sucursal
-      description: |
-        Preferido: campo `ajuste` (entero, puede ser negativo).
-        Compatibilidad: también se admite `delta` (deprecado).
+      tags: [Stocks]
+      summary: Ajustar stock de un producto en una sucursal
+      description: "Realiza un ajuste (positivo o negativo) al stock actual y registra un movimiento. No usar para entradas/salidas normales (usar POST /movimientos)."
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - id_sucursal
-                - id_producto
-                - ajuste
-              properties:
-                id_sucursal:
-                  type: integer
-                id_producto:
-                  type: string
-                ajuste:
-                  type: integer
-                  description: Variación de stock. Puede ser negativa.
-                delta:
-                  type: integer
-                  description: Alias legado de 'ajuste'.
-                  deprecated: true
-                motivo:
-                  type: string
-                  nullable: true
+              $ref: '#/components/schemas/AjusteStockRequest'
       responses:
         "200":
-          description: OK
+          description: Stock ajustado exitosamente. Devuelve el estado actualizado del stock.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/StockItem"
         "400":
-          description: Stock insuficiente o datos inválidos
+          $ref: '#/components/responses/BadRequest'
         "404":
-          description: No existe stock (o sucursal/producto)
+          $ref: '#/components/responses/NotFound'
+        "503":
+          $ref: '#/components/responses/DependencyDown'
 
   /movimientos:
     get:
-      tags:
-        - Movimientos
-      summary: Listar movimientos de stock
+      tags: [Movimientos]
+      summary: Listar historial de movimientos de stock
       parameters:
         - in: query
           name: producto_id
-          schema:
-            type: string
+          required: false
+          schema: { type: string }
         - in: query
           name: sucursal_id
-          schema:
-            type: integer
+          required: false
+          schema: { type: integer }
       responses:
         "200":
-          description: OK
+          description: Lista de movimientos ordenada por fecha descendente.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/Movimiento"
-
     post:
-      tags:
-        - Movimientos
-      summary: Crear movimiento (ENTRADA/EGRESO) y aplicar al stock
-      description: >
-        Si (sucursal, producto) no existe y el tipo es ENTRADA, se crea
-        automáticamente la fila en `stock` con `umbral_reposicion=0`.
+      tags: [Movimientos]
+      summary: Registrar ENTRADA/EGRESO y actualizar stock
+      description: |
+        Registra una operación normal de inventario.
+        - Actualiza el `stock_actual`.
+        - Si es ENTRADA y el stock no existe, lo crea con `umbral_reposicion=0`.
+        - Valida contra Catálogo si está habilitado.
       requestBody:
         required: true
         content:
@@ -223,127 +218,111 @@ paths:
               $ref: "#/components/schemas/MovimientoCreate"
       responses:
         "201":
-          description: Creado
+          description: Movimiento registrado y stock actualizado.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Movimiento"
         "400":
-          description: Stock insuficiente / datos inválidos
+          $ref: '#/components/responses/BadRequest'
         "404":
-          description: No existe (para EGRESO sin stock base)
+          $ref: '#/components/responses/NotFound'
+        "503":
+          $ref: '#/components/responses/DependencyDown'
 
 components:
   schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+    ErrorDetail:
+      type: object
+      properties:
+        detail: { type: string }
+
     Sucursal:
       type: object
       properties:
-        id_sucursal:
-          type: integer
-        nombre:
-          type: string
-        distrito:
-          type: string
-        direccion:
-          type: string
-          nullable: true
-
+        id_sucursal: { type: integer }
+        nombre: { type: string }
+        distrito: { type: string }
+        direccion: { type: string, nullable: true, description: "Dirección de la sucursal." }
     SucursalCreate:
       type: object
-      required:
-        - id_sucursal
-        - nombre
-        - distrito
-        - direccion
+      required: [id_sucursal, nombre, distrito, direccion]
       properties:
-        id_sucursal:
-          type: integer
-          minimum: 1
-        nombre:
-          type: string
-          minLength: 1
-        distrito:
-          type: string
-          minLength: 1
-        direccion:
-          type: string
-          minLength: 1
-
+        id_sucursal: { type: integer, minimum: 1 }
+        nombre: { type: string, minLength: 1 }
+        distrito: { type: string, minLength: 1 }
+        direccion: { type: string, minLength: 1, description: "Dirección de la sucursal." }
     SucursalUpdate:
       type: object
-      required:
-        - nombre
-        - distrito
-        - direccion
+      required: [nombre, distrito, direccion]
       properties:
-        nombre:
-          type: string
-          minLength: 1
-        distrito:
-          type: string
-          minLength: 1
-        direccion:
-          type: string
-          minLength: 1
+        nombre: { type: string, minLength: 1 }
+        distrito: { type: string, minLength: 1 }
+        direccion: { type: string, minLength: 1, description: "Dirección de la sucursal." }
 
     StockItem:
       type: object
       properties:
-        id_sucursal:
-          type: integer
-        id_producto:
-          type: string
-        stock_actual:
-          type: integer
-        umbral_reposicion:
-          type: integer
-        fecha_actualizacion:
-          type: string
-          format: date-time
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        stock_actual: { type: integer }
+        umbral_reposicion: { type: integer, description: "Umbral de reposición." }
+        fecha_actualizacion: { type: string, format: date-time }
+    AjusteStockRequest:
+      type: object
+      required: [id_sucursal, id_producto, ajuste]
+      properties:
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        ajuste: { type: integer, description: "Variación (+/-). Lógica de negocio prohíbe 0." }
+        motivo: { type: string, nullable: true, default: "AJUSTE" }
 
     Movimiento:
       type: object
       properties:
-        id:
-          type: integer
-        id_sucursal:
-          type: integer
-        id_producto:
-          type: string
-        tipo_movimiento:
-          type: string
-          enum:
-            - ENTRADA
-            - EGRESO
-        cantidad:
-          type: integer
-        fecha_movimiento:
-          type: string
-          format: date-time
-        motivo:
-          type: string
-          nullable: true
-
+        id: { type: integer, readOnly: true }
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+        cantidad: { type: integer }
+        fecha_movimiento: { type: string, format: date-time, readOnly: true }
+        motivo: { type: string, nullable: true }
     MovimientoCreate:
       type: object
-      required:
-        - id_sucursal
-        - id_producto
-        - tipo_movimiento
-        - cantidad
+      required: [id_sucursal, id_producto, tipo_movimiento, cantidad]
       properties:
-        id_sucursal:
-          type: integer
-        id_producto:
-          type: string
-        tipo_movimiento:
-          type: string
-          enum:
-            - ENTRADA
-            - EGRESO
-        cantidad:
-          type: integer
-          minimum: 1
-        motivo:
-          type: string
-          nullable: true
+        id_sucursal: { type: integer }
+        id_producto: { type: string }
+        tipo_movimiento: { type: string, enum: [ENTRADA, EGRESO] }
+        cantidad: { type: integer, minimum: 1 }
+        motivo: { type: string, nullable: true }
+
+  responses:
+    BadRequest:
+      description: Error en los datos de entrada (formato, validación, lógica).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'
+    NotFound:
+      description: Recurso no encontrado (ID no existe).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'
+    Conflict:
+      description: Conflicto (ej. ID ya existe).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'
+    DependencyDown:
+      description: Falla al comunicarse con un servicio externo (ej. Catálogo).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'

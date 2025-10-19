@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 @RequestMapping("/")
 public class RootRedirectController {
 
-    // dentro del BASE_PATH (/inventario), "/" redirige a /inventario/docs
     @GetMapping({"", "/"})
     public String index() {
         return "redirect:/docs";

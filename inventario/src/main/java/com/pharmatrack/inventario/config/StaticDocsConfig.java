@@ -15,7 +15,7 @@ public class StaticDocsConfig {
             @Override
             public void addResourceHandlers(ResourceHandlerRegistry registry) {
                 String base = docsDir.endsWith("/") ? docsDir : docsDir + "/";
-                registry.addResourceHandler("/openapi/**")             // <<-- NUEVO PATH
+                registry.addResourceHandler("/openapi/**")
                         .addResourceLocations("file:" + base);
             }
         };

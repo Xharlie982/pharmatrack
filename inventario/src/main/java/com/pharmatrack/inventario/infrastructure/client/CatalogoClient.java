@@ -32,18 +32,15 @@ public class CatalogoClient {
         return validate && baseUrl != null && !baseUrl.isBlank();
     }
 
-    /** Devuelve true si Catálogo confirma que el producto existe. */
     public boolean existeProducto(String id) {
-        if (!isEnabled()) return true;  // validación desactivada por config
+        if (!isEnabled()) return true;
         try {
-            // HEAD no siempre está implementado; usamos GET esperando 2xx/404
             ResponseEntity<Void> resp =
                     rest.getForEntity(baseUrl + "/productos/{id}", Void.class, id);
             return resp.getStatusCode().is2xxSuccessful();
         } catch (HttpClientErrorException.NotFound e) {
-            return false;                   // el producto NO existe
+            return false;
         } catch (RestClientException e) {
-            // Catálogo caído o timeout -> preferimos cerrar (no aceptar datos dudosos)
             throw new IllegalStateException("No se pudo validar con Catálogo", e);
         }
     }

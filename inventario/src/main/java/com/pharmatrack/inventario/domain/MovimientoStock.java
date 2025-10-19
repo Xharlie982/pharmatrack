@@ -19,7 +19,7 @@ public class MovimientoStock {
   private String id_producto;
 
   @Column(name = "tipo_movimiento", nullable = false)
-  private String tipo_movimiento; // ENTRADA | EGRESO
+  private String tipo_movimiento;
 
   @Column(nullable = false)
   private Integer cantidad;

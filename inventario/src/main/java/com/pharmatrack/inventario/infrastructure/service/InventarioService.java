@@ -39,6 +39,11 @@ public class InventarioService {
     return sucursalRepo.findByDistritoIgnoreCase(distrito.trim());
   }
 
+  public Sucursal obtenerSucursalPorId(Integer id) {
+    return sucursalRepo.findById(id)
+            .orElseThrow(() -> new NoSuchElementException("Sucursal no encontrada con ID: " + id));
+  }
+
   @Transactional
   public Sucursal crearSucursal(SucursalCreateRequest req) {
     if (sucursalRepo.existsById(req.id_sucursal()))
@@ -91,7 +96,6 @@ public class InventarioService {
   public Stock ajustarStock(Integer idSucursal, String idProducto, int ajuste, String motivo) {
     if (ajuste == 0) throw new IllegalArgumentException("ajuste no puede ser 0");
 
-    // ✅ valida en Catálogo
     validarProductoExiste(idProducto);
 
     StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
@@ -130,7 +134,6 @@ public class InventarioService {
       throw new IllegalArgumentException("tipo_movimiento debe ser ENTRADA o EGRESO");
     if (m.getCantidad() <= 0) throw new IllegalArgumentException("cantidad debe ser > 0");
 
-    // ✅ valida en Catálogo
     validarProductoExiste(m.getId_producto());
 
     int delta = tipo.equals("ENTRADA") ? m.getCantidad() : -m.getCantidad();
@@ -147,7 +150,7 @@ public class InventarioService {
         s.setUmbral_reposicion(0);
         s.setFecha_actualizacion(OffsetDateTime.now());
       } else {
-        throw new NoSuchElementException("No existe stock para esa sucursal y producto");
+        throw new NoSuchElementException("No existe stock para esa sucursal y producto (EGRESO inicial)");
       }
     }
 
@@ -170,7 +173,7 @@ public class InventarioService {
 
   private void validarProductoExiste(String idProducto) {
     if (!catalogoClient.existeProducto(idProducto)) {
-      throw new NoSuchElementException("Producto no existe en Catálogo");
+      throw new NoSuchElementException("Producto no existe en Catálogo: " + idProducto);
     }
   }
 }

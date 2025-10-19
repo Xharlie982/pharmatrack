@@ -40,8 +40,8 @@ class InventarioControllerWebMvcTest {
                 .thenReturn(List.of(s));
 
         mockMvc.perform(get("/inventario/stock")
-                        .contextPath("/inventario")          // 👈 clave
-                        .param("id_producto", "P001")        // usa snake_case como en el controller
+                        .contextPath("/inventario")
+                        .param("id_producto", "P001")
                         .param("id_sucursal", "10")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -65,7 +65,7 @@ class InventarioControllerWebMvcTest {
                 .thenReturn(List.of(s1));
 
         mockMvc.perform(get("/inventario/stock")
-                        .contextPath("/inventario")          // 👈 clave
+                        .contextPath("/inventario")
                         .param("distrito", "LIMA")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())

@@ -38,7 +38,6 @@ public class GlobalExceptionHandler {
                 .body(Map.of("detail", "No existe"));
     }
 
-    // IMPORTANTE: 404 reales (rutas no mapeadas) para que no se transformen en 500
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> notFoundResource(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
