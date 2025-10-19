@@ -23,8 +23,10 @@ cors:
 springdoc:
   swagger-ui:
     path: /docs
-  api-docs:
-    enabled: true
+    url: /openapi/inventario.yaml
+
+docs:
+  dir: ${DOCS_DIR:/app/docs}
 
 catalogo:
   base-url: ${CATALOGO_BASE_URL:http://localhost:8084/catalogo}
