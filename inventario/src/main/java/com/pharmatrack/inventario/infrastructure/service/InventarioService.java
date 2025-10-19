@@ -161,6 +161,7 @@ public class InventarioService {
     s.setFecha_actualizacion(OffsetDateTime.now());
     stockRepo.save(s);
 
+    m.setFecha_movimiento(OffsetDateTime.now());
     m.setTipo_movimiento(tipo);
     return movimientoRepo.save(m);
   }

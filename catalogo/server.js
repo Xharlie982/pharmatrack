@@ -1,5 +1,4 @@
-﻿// Fichero: catalogo/server.js
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import mongoose from "mongoose";
@@ -182,19 +181,8 @@ api.put("/productos/:id", async (req, res, next) => {
   }
 });
 
-api.delete("/productos/:id", async (req, res, next) => {
-  try {
-    const result = await Producto.deleteOne({ _id: req.params.id });
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ detail: "Producto no encontrado" });
-    }
-    res.status(204).send();
-  } catch (e) {
-    next(e);
-  }
-});
-
 // ---- Swagger UI ----
+
 if (SERVE_DOCS) {
   const spec = YAML.load("./docs/catalogo.yaml");
   api.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));

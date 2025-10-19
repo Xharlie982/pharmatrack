@@ -41,7 +41,7 @@ paths:
       description: Obtiene una lista paginada de productos con filtros.
       parameters:
         - in: query
-          name: keyword # <-- CAMBIO
+          name: keyword
           schema: { type: string }
           description: "Texto para buscar en nombre o keywords del producto."
         - in: query
@@ -53,7 +53,7 @@ paths:
           schema: { type: boolean }
           description: "Filtra por si necesita receta."
         - in: query
-          name: activo # <-- CAMBIO
+          name: activo
           schema: { type: boolean }
           description: "Filtra por productos activos (habilitados para la venta)."
         - in: query
@@ -122,8 +122,8 @@ paths:
           description: Producto no encontrado
     put:
       tags: [Productos]
-      summary: Actualizar un producto (Upsert)
-      description: "Actualiza un producto por su ID. Si el ID no existe, lo crea (comportamiento Upsert). Los timestamps son gestionados por el servidor."
+      summary: Actualizar o desactivar un producto (Upsert)
+      description: "Actualiza un producto. Para desactivarlo (soft delete), envía 'activo: false'."
       parameters:
         - in: path
           name: id
@@ -143,21 +143,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Producto"
-    delete:
-      tags: [Productos]
-      summary: Eliminar un producto
-      description: "Elimina un producto del catálogo usando su ID."
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-          description: "ID canónico (string) del producto."
-      responses:
-        "204":
-          description: Producto eliminado exitosamente (No Content)
-        "404":
-          description: Producto no encontrado
 
 components:
   schemas:
@@ -170,7 +155,6 @@ components:
         concentracion_dosis: { type: string, nullable: true }
         unidades_por_paquete: { type: integer, nullable: true }
 
-   
     Producto:
       type: object
       required: [_id, nombre]
