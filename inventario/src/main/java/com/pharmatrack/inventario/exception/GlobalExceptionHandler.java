@@ -35,13 +35,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, String>> notFound(NoSuchElementException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(Map.of("detail", "No existe"));
+                .body(Map.of("detail", ex.getMessage()));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> notFoundResource(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(Map.of("detail", "No encontrado"));
+                .body(Map.of("detail", "Endpoint no encontrado"));
+    }
+
+    @ExceptionHandler(ProductInactiveException.class)
+    public ResponseEntity<Map<String, String>> productInactive(ProductInactiveException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("detail", ex.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -52,14 +58,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> serverError(Exception ex) {
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("detail", "Error interno"));
+                .body(Map.of("detail", "Error interno del servidor"));
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> dependencyDown(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(Map.of("detail", "Catálogo no disponible"));
+                .body(Map.of("detail", "Servicio externo no disponible (ej. Catálogo)"));
     }
 
 }

@@ -122,26 +122,17 @@ paths:
       tags: [Stocks]
       summary: Consultar stock (filtrable)
       parameters:
+        # ¡LIMPIADO! Se quitaron los alias deprecated
         - in: query
           name: id_producto
           schema: { type: string }
           required: false
           description: ID del producto (Catálogo).
         - in: query
-          name: idProducto
-          schema: { type: string }
-          required: false
-          deprecated: true
-        - in: query
           name: id_sucursal
           schema: { type: integer }
           required: false
           description: ID de sucursal.
-        - in: query
-          name: idSucursal
-          schema: { type: integer }
-          required: false
-          deprecated: true
         - in: query
           name: distrito
           schema: { type: string }
@@ -177,6 +168,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "404":
           $ref: '#/components/responses/NotFound'
+        "409": # Se puede devolver para producto inactivo
+          $ref: '#/components/responses/Conflict'
         "503":
           $ref: '#/components/responses/DependencyDown'
 
@@ -227,6 +220,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         "404":
           $ref: '#/components/responses/NotFound'
+        "409": # Se puede devolver para producto inactivo
+          $ref: '#/components/responses/Conflict'
         "503":
           $ref: '#/components/responses/DependencyDown'
 
@@ -240,7 +235,6 @@ components:
       type: object
       properties:
         detail: { type: string }
-
     Sucursal:
       type: object
       properties:
@@ -263,7 +257,6 @@ components:
         nombre: { type: string, minLength: 1 }
         distrito: { type: string, minLength: 1 }
         direccion: { type: string, minLength: 1, description: "Dirección de la sucursal." }
-
     StockItem:
       type: object
       properties:
@@ -280,7 +273,6 @@ components:
         id_producto: { type: string }
         ajuste: { type: integer, description: "Variación (+/-). Lógica de negocio prohíbe 0." }
         motivo: { type: string, nullable: true, default: "AJUSTE" }
-
     Movimiento:
       type: object
       properties:
@@ -303,25 +295,25 @@ components:
 
   responses:
     BadRequest:
-      description: Error en los datos de entrada (formato, validación, lógica).
+      description: "Error en los datos de entrada (formato, validación, lógica)."
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorDetail'
     NotFound:
-      description: Recurso no encontrado (ID no existe).
+      description: "Recurso no encontrado (ID no existe)."
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorDetail'
     Conflict:
-      description: Conflicto (ej. ID ya existe).
+      description: "Conflicto (ej. ID ya existe o recurso inactivo)." # Descripción actualizada
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorDetail'
     DependencyDown:
-      description: Falla al comunicarse con un servicio externo (ej. Catálogo).
+      description: "Falla al comunicarse con un servicio externo (ej. Catálogo)."
       content:
         application/json:
           schema:

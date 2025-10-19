@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 @Service
@@ -96,7 +98,7 @@ public class InventarioService {
   public Stock ajustarStock(Integer idSucursal, String idProducto, int ajuste, String motivo) {
     if (ajuste == 0) throw new IllegalArgumentException("ajuste no puede ser 0");
 
-    validarProductoExiste(idProducto);
+    catalogoClient.validarProducto(idProducto);
 
     StockPK pk = new StockPK(); pk.setId_sucursal(idSucursal); pk.setId_producto(idProducto);
     Stock s = stockRepo.findById(pk).orElseThrow(() ->
@@ -115,6 +117,7 @@ public class InventarioService {
     m.setTipo_movimiento(ajuste >= 0 ? "ENTRADA" : "EGRESO");
     m.setCantidad(Math.abs(ajuste));
     m.setMotivo(motivo);
+    m.setFecha_movimiento(OffsetDateTime.now());
     movimientoRepo.save(m);
 
     return s;
@@ -134,7 +137,8 @@ public class InventarioService {
       throw new IllegalArgumentException("tipo_movimiento debe ser ENTRADA o EGRESO");
     if (m.getCantidad() <= 0) throw new IllegalArgumentException("cantidad debe ser > 0");
 
-    validarProductoExiste(m.getId_producto());
+    // ¡SIMPLIFICADO! Ahora solo llama al método de validación.
+    catalogoClient.validarProducto(m.getId_producto());
 
     int delta = tipo.equals("ENTRADA") ? m.getCantidad() : -m.getCantidad();
 
@@ -168,13 +172,5 @@ public class InventarioService {
 
   public List<MovimientoStock> listarMovimientos(String productoId, Integer sucursalId) {
     return movimientoRepo.buscar(productoId, sucursalId);
-  }
-
-  // ---------- helper ----------
-
-  private void validarProductoExiste(String idProducto) {
-    if (!catalogoClient.existeProducto(idProducto)) {
-      throw new NoSuchElementException("Producto no existe en Catálogo: " + idProducto);
-    }
   }
 }
