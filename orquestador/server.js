@@ -113,7 +113,8 @@ r.post("/receta/validar", async (req, res, next) => {
       return res.status(400).json({ message: "id_receta requerido" });
     }
 
-    const receta = await http.get(`${RECETAS_URL}/recetas/${encodeURIComponent(id)}`, { headers: { "X-Correlation-Id": c } }).then(r => r.data);
+    const receta = await http.get(`${RECETAS_URL}/${encodeURIComponent(id)}`, { headers: { "X-Correlation-Id": c } }).then(r => r.data);
+    
     const items = await Promise.all((receta.detalle || []).map(async it => {
       const st = await http.get(`${INVENTARIO_URL}/stock`, {
         headers: { "X-Correlation-Id": c },

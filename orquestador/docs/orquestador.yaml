@@ -25,7 +25,14 @@ paths:
       summary: Health check básico (liveness)
       description: Devuelve un estado 'ok' si el servicio del orquestador está en ejecución.
       responses:
-        "200": { description: OK }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
 
   /disponibilidad:
     get:
@@ -54,11 +61,14 @@ paths:
           schema: { type: integer, default: 1 }
           description: Filtra sucursales con stock mayor o igual a este valor.
       responses:
-        "200": { description: "Éxito. Devuelve una lista de productos con sus sucursales disponibles." }
-        "400": { description: "Faltan parámetros requeridos ('distrito' y ('producto' o 'keyword'))." }
-        "502": { description: "Error en un servicio externo (Catálogo o Inventario)." }
+        "200":
+          description: "Éxito. Devuelve una lista de productos con sus sucursales disponibles."
+        "400":
+          description: "Faltan parámetros requeridos ('distrito' y ('producto' o 'keyword'))."
+        "502":
+          description: "Error en un servicio externo (Catálogo o Inventario)."
 
-  /ficha-producto/{productoId}:
+  /ficha-producto/{productoId}: 
     get:
       tags: [Disponibilidad]
       summary: Obtener ficha completa de un producto
@@ -85,7 +95,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id_receta]
+              required: [id_receta] 
               properties:
                 id_receta: { type: integer }
       responses:
