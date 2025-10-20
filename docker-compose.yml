@@ -10,8 +10,10 @@
       MONGO_URL: ${MONGO_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
       SERVE_DOCS: "1"
-    healthcheck:
 
+    volumes:
+      - ./catalogo/docs:/app/docs:ro
+    healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8084${CATALOGO_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
@@ -31,10 +33,11 @@
       PG_USER: ${PG_USER}
       PG_PASSWORD: ${PG_PASSWORD}
       CORS_ORIGINS: ${CORS_ORIGINS}
-
       CATALOGO_BASE_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
-    healthcheck:
 
+    volumes:
+      - ./inventario/docs:/app/docs:ro
+    healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8082${INVENTARIO_BASE_PATH}/healthz || exit 1"]
       interval: 15s
       timeout: 5s
@@ -50,11 +53,9 @@
       MYSQL_URL: ${MYSQL_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
       RECETAS_BASE_PATH: ${RECETAS_BASE_PATH}
-
       CATALOGO_BASE_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
       INVENTARIO_BASE_URL: http://inventario-api:8082${INVENTARIO_BASE_PATH}
     healthcheck:
-
       test: ["CMD","wget","-qO-","http://localhost:8083${RECETAS_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
@@ -71,17 +72,17 @@
       PORT: ${ORQUESTADOR_PORT:-8085}
       CORS_ORIGINS: ${CORS_ORIGINS}
       SERVE_DOCS: "1"
-
       CATALOGO_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
       INVENTARIO_URL: http://inventario-api:8082${INVENTARIO_BASE_PATH}
       RECETAS_URL: http://recetas-api:8083${RECETAS_BASE_PATH}
-    healthcheck:
 
+    volumes:
+      - ./orquestador/docs:/app/docs:ro
+    healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8085${ORQUESTADOR_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3
-
     depends_on:
       catalogo:
         condition: service_healthy
