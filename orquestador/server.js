@@ -20,13 +20,14 @@ app.use(cors({
 const PORT = Number(process.env.ORQUESTADOR_PORT || 8085);
 const BASE_PATH = (process.env.ORQUESTADOR_BASE_PATH || "/orquestador").replace(/\/+$/, "");
 
-const INVENTARIO_URL = (process.env.INVENTARIO_URL || "http://localhost:8082/inventario").replace(/\/+$/, "");
-const RECETAS_URL    = (process.env.RECETAS_URL    || "http://localhost:8083/recetas").replace(/\/+$/, "");
-const CATALOGO_URL   = (process.env.CATALOGO_URL   || "http://localhost:8084/catalogo").replace(/\/+$/, "");
+const INVENTARIO_URL = (process.env.INVENTARIO_URL).replace(/\/+$/, "");
+const RECETAS_URL    = (process.env.RECETAS_URL).replace(/\/+$/, "");
+const CATALOGO_URL   = (process.env.CATALOGO_URL).replace(/\/+$/, "");
 
 const http = axios.create({ timeout: Number(process.env.UPSTREAM_TIMEOUT_MS || 5000) });
 const cid = req => req.header("X-Correlation-Id") || crypto.randomUUID();
 
+// Router base
 const r = express.Router();
 r.get("/", (_req, res) => res.redirect("./docs"));
 r.get("/healthz", (_req, res) => res.json({ status: "ok" }));
@@ -54,7 +55,6 @@ r.get("/disponibilidad", async (req, res, next) => {
       const p = await http.get(`${CATALOGO_URL}/productos/${encodeURIComponent(productoId)}`, httpOptions).then(r => r.data);
       if (p) productos.push(p);
     } else if (keyword) {
-
       const resultado = await http.get(`${CATALOGO_URL}/productos`, { ...httpOptions, params: { keyword } }).then(r => r.data);
       productos = resultado?.items || [];
     }
@@ -74,17 +74,16 @@ r.get("/disponibilidad", async (req, res, next) => {
     }));
     
     res.json({ items: items.filter(item => item.sucursales.length > 0) });
-
   } catch (e) {
     next(e);
   }
 });
 
 // -------- Ficha de producto
-r.get("/ficha-producto/:producto", async (req, res, next) => {
+r.get("/ficha-producto/:productoId", async (req, res, next) => {
   const c = cid(req);
   try {
-    const idp = req.params.producto;
+    const idp = req.params.productoId;
     const prod = await http.get(`${CATALOGO_URL}/productos/${encodeURIComponent(idp)}`, { headers: { "X-Correlation-Id": c } }).then(r => r.data);
     if (!prod) {
       return res.status(404).json({ message: "Producto no existe" });
@@ -138,20 +137,24 @@ r.post("/receta/validar", async (req, res, next) => {
 
 // Docs
 if (process.env.SERVE_DOCS === "1") {
-  const spec = YAML.load(process.env.OPENAPI_FILE || "./docs/orquestador.yaml");
+  const spec = YAML.load("./docs/orquestador.yaml");
   r.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
 }
 
-// Manejo de errores centralizado
+// Montaje y Manejo de Errores
 app.use(BASE_PATH || "/", r);
+
+r.use((_req, res) => {
+  res.status(404).json({ detail: "Not Found in this service" });
+});
+
 app.use((err, req, res, next) => {
-  console.error(`[orquestador] Error en ${req.method} ${req.originalUrl}`, err);
+  console.error(`[orquestador] Error en ${req.method} ${req.originalUrl}`, err.message);
   if (err.response) {
     return res.status(err.response.status).json(err.response.data);
   }
   res.status(500).json({ message: "Error interno en el orquestador" });
 });
-
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[orquestador] escuchando en :${PORT}, base='${BASE_PATH || "/"}'`);

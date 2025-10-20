@@ -1,14 +1,18 @@
 openapi: 3.0.3
-info: { title: Orquestador API, version: "1.3.0" }
+info:
+  title: Orquestador API (PharmaTrack)
+  version: "1.4.0"
+  description: "API central que orquesta las llamadas a los microservicios de Catálogo, Inventario y Recetas para simplificar las operaciones del frontend."
 
 servers:
   - url: "{basePath}"
     variables:
-      basePath: { default: /orquestador }
+      basePath:
+        default: /orquestador
 
 tags:
   - name: Health
-    description: Verificación de estado de salud del servicio y sus dependencias
+    description: Verificación de estado del servicio
   - name: Disponibilidad
     description: Consultas combinadas de productos y stock
   - name: Recetas
@@ -19,27 +23,29 @@ paths:
     get:
       tags: [Health]
       summary: Health check básico (liveness)
-      responses: { "200": { description: OK } }
+      description: Devuelve un estado 'ok' si el servicio del orquestador está en ejecución.
+      responses:
+        "200": { description: OK }
 
   /disponibilidad:
     get:
       tags: [Disponibilidad]
       summary: Buscar disponibilidad de productos en un distrito
-      description: "Combina una búsqueda en Catálogo con una consulta de stock en Inventario."
+      description: "Combina una búsqueda en Catálogo con una consulta de stock en Inventario para encontrar productos activos con stock en un distrito específico."
       parameters:
         - name: producto
           in: query
           required: false
           schema: { type: string }
-          description: ID exacto del producto a buscar.
+          description: ID exacto del producto a buscar. Usar este o 'keyword'.
         - name: keyword
           in: query
           required: false
           schema: { type: string }
-          description: Texto libre para buscar en el nombre o keywords del Catálogo.
+          description: Texto libre para buscar en el nombre o keywords del Catálogo. Usar este o 'producto'.
         - name: distrito
           in: query
-          required: true
+          required: true 
           schema: { type: string }
           description: Distrito donde buscar el stock.
         - name: stock_minimo
@@ -48,28 +54,31 @@ paths:
           schema: { type: integer, default: 1 }
           description: Filtra sucursales con stock mayor o igual a este valor.
       responses:
-        "200": { description: OK }
-        "400": { description: Faltan parámetros requeridos }
-        "502": { description: Error en un servicio externo }
+        "200": { description: "Éxito. Devuelve una lista de productos con sus sucursales disponibles." }
+        "400": { description: "Faltan parámetros requeridos ('distrito' y ('producto' o 'keyword'))." }
+        "502": { description: "Error en un servicio externo (Catálogo o Inventario)." }
 
   /ficha-producto/{productoId}:
     get:
       tags: [Disponibilidad]
-      summary: Obtener ficha completa de un producto con stock agregado por distrito
+      summary: Obtener ficha completa de un producto
+      description: "Obtiene los detalles de un producto desde Catálogo y le agrega un resumen del stock total por distrito desde Inventario."
       parameters:
-        - name: productoId
+        - name: productoId 
           in: path
           required: true
           schema: { type: string }
+          description: "ID del producto a consultar."
       responses:
         "200": { description: OK }
-        "404": { description: Producto no encontrado }
-        "502": { description: Error en un servicio externo }
+        "404": { description: Producto no encontrado en Catálogo. }
+        "502": { description: Error en un servicio externo. }
 
   /receta/validar:
     post:
       tags: [Recetas]
-      summary: Pre-validar el stock en una sucursal para una receta
+      summary: Pre-validar el stock para una receta
+      description: "Consulta el stock en la sucursal de la receta para cada uno de sus productos y sugiere un estado (VALIDADA, PARCIAL, RECHAZADA)."
       requestBody:
         required: true
         content:
@@ -80,7 +89,7 @@ paths:
               properties:
                 id_receta: { type: integer }
       responses:
-        "200": { description: OK (con estado sugerido) }
-        "400": { description: Falta id_receta }
-        "404": { description: Receta no encontrada }
-        "502": { description: Error en un servicio externo }
+        "200": { description: "OK, con estado sugerido." }
+        "400": { description: "Falta id_receta en el cuerpo de la petición." }
+        "404": { description: "La receta no fue encontrada en el servicio de Recetas." }
+        "502": { description: "Error en un servicio externo." }
