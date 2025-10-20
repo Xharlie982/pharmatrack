@@ -46,7 +46,6 @@ htmlcov/
 target/
 *.class
 dependency-reduced-pom.xml
-# (mantén el wrapper si existe)
 !/.mvn/wrapper/maven-wrapper.jar
 
 # --- Logs ---
@@ -55,7 +54,7 @@ logs/
 *.out
 *.err
 
-# --- Env / Creds (mantén un .env.example) ---
+# --- Env / Creds ---
 .env
 .env.*
 !.env.example
@@ -65,7 +64,7 @@ logs/
 *.pfx
 .aws/
 
-# --- Docker (archivos locales opcionales) ---
+# --- Docker ---
 docker-compose.override.yml
 docker-compose.local.yml
 
@@ -75,7 +74,7 @@ docker-compose.local.yml
 *.swp
 *.swo
 
-# --- DB dumps locales (NO ignoramos nuestros DDL/Seeds) ---
+# --- DB dumps locales ---
 dumps/
 backup/
 *.sqlite
