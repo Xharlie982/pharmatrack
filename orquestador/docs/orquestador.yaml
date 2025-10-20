@@ -2,105 +2,85 @@ openapi: 3.0.3
 info: { title: Orquestador API, version: "1.3.0" }
 
 servers:
-  - url: http://{host}:{port}{basePath}
+  - url: "{basePath}"
     variables:
-      host:     { default: localhost }
-      port:     { default: "8085" }
       basePath: { default: /orquestador }
 
 tags:
   - name: Health
+    description: Verificación de estado de salud del servicio y sus dependencias
   - name: Disponibilidad
+    description: Consultas combinadas de productos y stock
   - name: Recetas
+    description: Orquestación de validaciones de recetas
 
 paths:
   /healthz:
     get:
       tags: [Health]
-      summary: Liveness
+      summary: Health check básico (liveness)
       responses: { "200": { description: OK } }
-
-  /readyz:
-    get:
-      tags: [Health]
-      summary: Readiness (ping a downstreams)
-      responses:
-        "200": { description: OK }
-        "503": { description: Downstream no disponible }
 
   /disponibilidad:
     get:
       tags: [Disponibilidad]
-      summary: Disponibilidad por producto y zona
-      description: >
-        Use **producto** (ID exacto) o **busqueda** (texto libre Catálogo).
-        Compatibilidad: `productoId`, `q`, `minStock` también funcionan.
+      summary: Buscar disponibilidad de productos en un distrito
+      description: "Combina una búsqueda en Catálogo con una consulta de stock en Inventario."
       parameters:
         - name: producto
           in: query
           required: false
           schema: { type: string }
-          description: ID canónico del producto (alias aceptado: **productoId**).
-        - name: busqueda
+          description: ID exacto del producto a buscar.
+        - name: keyword 
           in: query
           required: false
           schema: { type: string }
-          description: Texto libre para buscar en Catálogo (alias aceptado: **q**).
+          description: Texto libre para buscar en el nombre o keywords del Catálogo.
         - name: distrito
           in: query
           required: true
           schema: { type: string }
+          description: Distrito donde buscar el stock.
         - name: stock_minimo
           in: query
           required: false
           schema: { type: integer, default: 1 }
-          description: Filtra sucursales con stock >= a este valor (alias aceptado: **minStock**).
+          description: Filtra sucursales con stock mayor o igual a este valor.
       responses:
         "200": { description: OK }
-        "400": { description: Faltan parámetros }
-        "502": { description: Downstream error }
+        "400": { description: Faltan parámetros requeridos }
+        "502": { description: Error en un servicio externo }
 
-  /ficha-producto/{producto}:
+  /ficha-producto/{productoId}:
     get:
       tags: [Disponibilidad]
-      summary: Ficha (Catálogo + agregados de stock)
+      summary: Obtener ficha completa de un producto con stock agregado por distrito
       parameters:
-        - name: producto
+        - name: productoId
           in: path
           required: true
           schema: { type: string }
       responses:
         "200": { description: OK }
-        "404": { description: Not Found }
-        "502": { description: Downstream error }
+        "404": { description: Producto no encontrado }
+        "502": { description: Error en un servicio externo }
 
   /receta/validar:
     post:
       tags: [Recetas]
-      summary: Pre-validar stock para una receta (no escribe nada)
+      summary: Pre-validar el stock en una sucursal para una receta
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [ id_receta ]
+              required: [id_receta]
               properties:
                 id_receta: { type: integer }
       responses:
-        "200": { description: OK (todo disponible) }
-        "207": { description: Parcial (algunos ítems faltan) }
-        "400": { description: Bad Request }
+        "200": { description: OK (con estado sugerido) }
+        "400": { description: Falta id_receta }
         "404": { description: Receta no encontrada }
-        "502": { description: Downstream error }
-
-  /receta/{id}/validacion:
-    get:
-      tags: [Recetas]
-      summary: Ver la validación calculada
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "200": { description: OK }
-        "404": { description: Not Found }
-        "502": { description: Downstream error }
+        "502": { description: Error en un servicio externo }
