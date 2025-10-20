@@ -1,96 +1,92 @@
-﻿version: "3.9"
-
-services:
-  inventario:
-    build: ./inventario
-    environment:
-      PG_HOST: ${PG_HOST}
-      PG_PORT: ${PG_PORT:-5432}
-      PG_DB: ${PG_DB:-inventario}
-      PG_USER: ${PG_USER}
-      PG_PASSWORD: ${PG_PASSWORD}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+﻿services:
+  catalogo:
+    build: ./catalogo
+    container_name: catalogo-api
     ports:
-      - "8082:8082"
+      - "${CATALOGO_PORT:-8084}:8084"
+    environment:
+      CATALOGO_BASE_PATH: ${CATALOGO_BASE_PATH}
+      PORT: ${CATALOGO_PORT:-8084}
+      MONGO_URL: ${MONGO_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      SERVE_DOCS: "1"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/healthz"]
+
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084${CATALOGO_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s
+    restart: unless-stopped
+
+  inventario:
+    build: ./inventario
+    container_name: inventario-api
+    ports:
+      - "${INVENTARIO_PORT:-8082}:8082"
+    environment:
+      BASE_PATH: ${INVENTARIO_BASE_PATH}
+      PG_HOST: ${PG_HOST}
+      PG_PORT: ${PG_PORT}
+      PG_DB: ${PG_DB}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+
+      CATALOGO_BASE_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
+    healthcheck:
+
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082${INVENTARIO_BASE_PATH}/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   recetas:
     build: ./recetas
+    container_name: recetas-api
+    ports:
+      - "${RECETAS_PORT:-8083}:8083"
     environment:
       MYSQL_URL: ${MYSQL_URL}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-    ports:
-      - "8083:8083"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8083/healthz"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      RECETAS_BASE_PATH: ${RECETAS_BASE_PATH}
 
-  catalogo:
-    build: ./catalogo
-    environment:
-      MONGO_URL: ${MONGO_URL}
-      PORT: ${CATALOGO_PORT:-8084}
-      SERVE_DOCS: ${SERVE_DOCS:-0}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-    ports:
-      - "8084:8084"
+      CATALOGO_BASE_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
+      INVENTARIO_BASE_URL: http://inventario-api:8082${INVENTARIO_BASE_PATH}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/healthz"]
+
+      test: ["CMD","wget","-qO-","http://localhost:8083${RECETAS_BASE_PATH}/healthz"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s
     restart: unless-stopped
 
   orquestador:
     build: ./orquestador
+    container_name: orquestador-api
+    ports:
+      - "${ORQUESTADOR_PORT:-8085}:8085"
     environment:
-      INVENTARIO_URL: http://inventario:8082
-      RECETAS_URL:    http://recetas:8083
-      CATALOGO_URL:   http://catalogo:8084
+      ORQUESTADOR_BASE_PATH: ${ORQUESTADOR_BASE_PATH}
       PORT: ${ORQUESTADOR_PORT:-8085}
-      SERVE_DOCS: ${SERVE_DOCS:-0}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      SERVE_DOCS: "1"
+
+      CATALOGO_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
+      INVENTARIO_URL: http://inventario-api:8082${INVENTARIO_BASE_PATH}
+      RECETAS_URL: http://recetas-api:8083${RECETAS_BASE_PATH}
+    healthcheck:
+
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085${ORQUESTADOR_BASE_PATH}/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
     depends_on:
+      catalogo:
+        condition: service_healthy
       inventario:
         condition: service_healthy
       recetas:
         condition: service_healthy
-      catalogo:
-        condition: service_healthy
-    ports:
-      - "8085:8085"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8085/healthz"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
-
-  analitico:
-    build: ./analitico
-    environment:
-      AWS_REGION: ${AWS_REGION:-us-east-1}
-      ATHENA_DB: ${ATHENA_DB:-pharmatrack_raw}
-      ATHENA_OUTPUT: ${ATHENA_OUTPUT}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
-    ports:
-      - "8086:8086"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8086/healthz"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: unless-stopped
