@@ -1,5 +1,3 @@
-// MongoDB Shell (v6+) — crear colección 'productos' con validador JSON Schema
-// Usamos _id como string (ID canónico compartido con otros MS)
 db.createCollection('productos', {
   validator: {
     $jsonSchema: {

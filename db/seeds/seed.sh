@@ -5,7 +5,6 @@
 echo "### Iniciando proceso de limpieza y poblado masivo... ###"
 
 # --- 1. PostgreSQL (inventario) ---
-
 echo "--- Procesando PostgreSQL (inventario)... ---"
 docker exec -i pg16 psql -U carlosalith -d inventario <<'SQL'
   -- Limpieza de tablas para un inicio limpio
@@ -45,15 +44,25 @@ docker exec -i pg16 psql -U carlosalith -d inventario <<'SQL'
         v_tipo := 'EGRESO';
       END IF;
 
-      -- Insertar el movimiento
+      -- Insertar el movimiento SIEMPRE
       INSERT INTO movimiento_stock (id_sucursal, id_producto, tipo_movimiento, cantidad, motivo)
       VALUES (v_id_sucursal, v_id_producto, v_tipo, v_cantidad, 'Carga masiva');
       
+      -- ¡LÓGICA CORREGIDA DEFINITIVA!
       -- Actualizar o crear el stock correspondiente al movimiento
       INSERT INTO stock (id_sucursal, id_producto, stock_actual, umbral_reposicion, fecha_actualizacion)
-      VALUES (v_id_sucursal, v_id_producto, v_cantidad, 10, NOW())
+      VALUES (
+          v_id_sucursal,
+          v_id_producto,
+          -- El stock inicial NUNCA puede ser negativo
+          GREATEST(0, CASE WHEN v_tipo = 'ENTRADA' THEN v_cantidad ELSE 0 END),
+          10,
+          NOW()
+      )
       ON CONFLICT (id_sucursal, id_producto) DO UPDATE
-      SET stock_actual = stock.stock_actual + (CASE WHEN v_tipo = 'ENTRADA' THEN v_cantidad ELSE -v_cantidad END),
+      SET
+          -- El UPDATE NUNCA debe resultar en negativo
+          stock_actual = GREATEST(0, stock.stock_actual + (CASE WHEN v_tipo = 'ENTRADA' THEN v_cantidad ELSE -v_cantidad END)),
           fecha_actualizacion = NOW();
       
     END LOOP;
@@ -63,7 +72,6 @@ echo "--- PostgreSQL finalizado. ---"
 
 
 # --- 2. MySQL (recetas) ---
-
 echo "--- Procesando MySQL (recetas)... ---"
 docker exec -i mysql mysql -ucarlosalith -p111821 recetas <<'SQL'
   -- Limpieza de tablas para un inicio limpio
@@ -107,7 +115,6 @@ echo "--- MySQL finalizado. ---"
 
 
 # --- 3. MongoDB (catalogo) ---
-
 echo "--- Procesando MongoDB (catalogo)... ---"
 docker exec -i mongo mongosh --quiet "mongodb://carlosalith:111821@localhost:27017/catalogo?authSource=admin" <<'JS'
   // Limpieza de la colección para un inicio limpio

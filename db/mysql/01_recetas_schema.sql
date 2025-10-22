@@ -1,10 +1,9 @@
--- Base: recetas (MySQL 8.0+)
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 CREATE TABLE IF NOT EXISTS receta (
   id_receta        BIGINT PRIMARY KEY AUTO_INCREMENT,
-  id_sucursal      INT        NOT NULL,          -- FK LÓGICA → Inventario.sucursal
+  id_sucursal      INT        NOT NULL,          
   nombre_paciente  VARCHAR(100),
   fecha_receta     DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
   estado           ENUM('NUEVA','VALIDADA','DISPENSADA','ANULADA')
@@ -12,8 +11,8 @@ CREATE TABLE IF NOT EXISTS receta (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS receta_detalle (
-  id_receta     BIGINT      NOT NULL,            -- FK REAL → receta
-  id_producto   VARCHAR(64) NOT NULL,            -- FK LÓGICA → Catálogo.productos
+  id_receta     BIGINT      NOT NULL,            
+  id_producto   VARCHAR(64) NOT NULL,            
   cantidad      INT         NOT NULL,
   PRIMARY KEY (id_receta, id_producto),
   CONSTRAINT fk_receta_detalle__receta
@@ -23,7 +22,7 @@ CREATE TABLE IF NOT EXISTS receta_detalle (
 
 CREATE TABLE IF NOT EXISTS dispensacion (
   id                   BIGINT PRIMARY KEY AUTO_INCREMENT,
-  id_receta            BIGINT     NOT NULL,      -- FK REAL → receta
+  id_receta            BIGINT     NOT NULL,     
   fecha_dispensacion   DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
   cantidad_total       INT,
   CONSTRAINT fk_dispensacion__receta

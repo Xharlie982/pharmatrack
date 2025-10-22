@@ -1,4 +1,3 @@
-// Índices "ultra necesarios" para Catálogo
 db.productos.createIndex({ nombre: "text", keywords: "text" });
 db.productos.createIndex({ codigo_atc: 1 });
 db.productos.createIndex({ requiere_receta: 1 });
