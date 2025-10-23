@@ -1,4 +1,6 @@
-﻿services:
+﻿version: "3.9"
+
+services:
   catalogo:
     build: ./catalogo
     container_name: catalogo-api
@@ -10,7 +12,6 @@
       MONGO_URL: ${MONGO_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
       SERVE_DOCS: "1"
-
     volumes:
       - ./catalogo/docs:/app/docs:ro
     healthcheck:
@@ -34,7 +35,6 @@
       PG_PASSWORD: ${PG_PASSWORD}
       CORS_ORIGINS: ${CORS_ORIGINS}
       CATALOGO_BASE_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
-
     volumes:
       - ./inventario/docs:/app/docs:ro
     healthcheck:
@@ -75,7 +75,6 @@
       CATALOGO_URL: http://catalogo-api:8084${CATALOGO_BASE_PATH}
       INVENTARIO_URL: http://inventario-api:8082${INVENTARIO_BASE_PATH}
       RECETAS_URL: http://recetas-api:8083${RECETAS_BASE_PATH}
-
     volumes:
       - ./orquestador/docs:/app/docs:ro
     healthcheck:
@@ -90,4 +89,22 @@
         condition: service_healthy
       recetas:
         condition: service_healthy
+    restart: unless-stopped
+
+  analitico: 
+    build: ./analitico 
+    container_name: analitico-api
+    ports:
+      - "${ANALITICO_PORT:-8086}:8000" 
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      ATHENA_DB: ${ATHENA_DB}
+      ATHENA_OUTPUT: ${ATHENA_OUTPUT}
+      ANALITICO_BASE_PATH: ${ANALITICO_BASE_PATH} 
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000${ANALITICO_BASE_PATH}/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped

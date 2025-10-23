@@ -9,7 +9,7 @@ db.createCollection('productos', {
         nombre: { bsonType: 'string', minLength: 1 },
         codigo_atc: { bsonType: ['string', 'null'] },
         requiere_receta: { bsonType: ['bool', 'null'] },
-        habilitado: { bsonType: ['bool', 'null'] },
+        activo: { bsonType: ['bool', 'null'] },
         keywords: { bsonType: ['array', 'null'], items: { bsonType: 'string' } },
         variantes: {
           bsonType: ['array', 'null'],
