@@ -78,7 +78,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ===================== Función Auxiliar Athena =====================
+
 def run_athena_query(query: str, max_wait_seconds: int = 90):
     """
     Ejecuta una consulta en Athena, espera a que termine y devuelve los resultados 
@@ -191,15 +193,21 @@ def run_athena_query(query: str, max_wait_seconds: int = 90):
 
 # ===================== Rutas API =====================
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def root_redirect():
-    target = (BASE_PATH or "") + "/docs"
-    print(f"Redirigiendo desde la raíz a {target}")
-    return RedirectResponse(url=target, status_code=307) 
+    target_path = "/docs"
+    redirect_url = BASE_PATH + target_path if BASE_PATH else target_path
+    if not BASE_PATH: redirect_url = target_path
+    print(f"Redirigiendo desde la raíz (relativa a '{BASE_PATH}') a '{redirect_url}'")
+    return RedirectResponse(url=redirect_url, status_code=307)
 
-@app.get("/healthz")
+
+
+@app.get("/healthz", summary="Health Check")
 async def healthz():
+    """Endpoint simple para verificar que la API está respondiendo."""
     return {"status": "ok"}
+
 
 @app.get("/vista/stock_bajo", summary="Productos con Bajo Stock")
 async def get_vista_stock_bajo():
@@ -210,6 +218,7 @@ async def get_vista_stock_bajo():
     query = 'SELECT * FROM vista_stock_bajo_reposicion ORDER BY cantidad_a_reponer DESC;'
     try:
         results = run_athena_query(query)
+
         for item in results:
             for key in ['stock_actual', 'umbral_reposicion', 'cantidad_a_reponer']:
                 if item.get(key) is not None:
@@ -225,15 +234,16 @@ async def get_vista_stock_bajo():
 
 @app.get("/vista/productos_mas_recetados", summary="Top Productos Más Recetados")
 async def get_vista_productos_mas_recetados(
-    limit: int = Query(10, ge=1, le=100, description="Número de productos a retornar (1-100)")
+    limit: int = Query(10, ge=1, le=200, description="Número de productos a retornar (1-200)") # <-- LÍMITE CAMBIADO A 200
 ):
     """
     Consulta la vista 'vista_productos_mas_recetados' para obtener los N
     productos más recetados globalmente.
     """
-    query = f'SELECT * FROM vista_productos_mas_recetados LIMIT {limit};'
+    query = f'SELECT * FROM vista_productos_mas_recetados LIMIT {limit};' 
     try:
         results = run_athena_query(query)
+
         for item in results:
              if item.get('total_recetado') is not None:
                  try: item['total_recetado'] = int(item['total_recetado'])
@@ -245,16 +255,24 @@ async def get_vista_productos_mas_recetados(
         raise HTTPException(status_code=500, detail="Error interno procesando top productos recetados.")
 
 
+# --- Endpoints basados en Consultas Directas (KPIs) ---
+
 @app.get("/kpi/stockout", summary="Alerta de Quiebre de Stock")
 async def kpi_stockout(
-    distrito: Optional[str] = Query(None, description="Filtrar por distrito de sucursal")
+    distrito: Optional[str] = Query(None, description="Filtrar por distrito (sensible a mayúsculas)")
 ):
     """
     Identifica productos en riesgo de quiebre de stock (stock <= umbral)
     agrupado por distrito y producto.
     """
     where_clauses = []
-    if distrito: where_clauses.append(f"s.distrito = '{distrito}'") 
+    if distrito:
+        import re
+        if re.fullmatch(r"^[a-zA-Z0-9_ ]+$", distrito):
+             where_clauses.append(f"s.distrito = '{distrito}'") 
+        else:
+             raise HTTPException(status_code=400, detail="Formato de distrito inválido.")
+             
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
     
     query = f"""
@@ -285,7 +303,7 @@ async def kpi_stockout(
         for item in results:
             for key in ['stock_total_distrito', 'umbral_reposicion']:
                  item[key] = int(item.get(key) or 0)
-            item['en_alerta'] = item.get('en_alerta') == 'true' 
+            item['en_alerta'] = item.get('en_alerta', 'false').lower() == 'true' 
         return results
     except HTTPException as e: raise e
     except Exception as e:
@@ -297,7 +315,7 @@ async def kpi_stockout(
 async def kpi_cobertura():
     """
     Calcula los días de cobertura de stock para cada producto en cada sucursal,
-    basado en la demanda promedio diaria de los últimos 30 días.
+    basado en la demanda promedio diaria (recetas) de los últimos 30 días.
     """
     query = """
     WITH demanda_diaria_promedio AS (
@@ -310,7 +328,7 @@ async def kpi_cobertura():
         JOIN 
             receta_detalle d ON r.id_receta = d.id_receta
         WHERE
-            CAST(r.fecha_receta AS date) >= date_add('day', -30, current_date) 
+            TRY_CAST(r.fecha_receta AS date) >= date_add('day', -30, current_date) 
         GROUP BY 
             r.id_sucursal, d.id_producto
     )
@@ -320,9 +338,9 @@ async def kpi_cobertura():
         st.id_producto,
         p.nombre AS nombre_producto, 
         st.stock_actual, 
-        COALESCE(ddp.demanda_promedio_diaria, 0) AS demanda_promedio_diaria,
+        COALESCE(ddp.demanda_promedio_diaria, 0.0) AS demanda_promedio_diaria,
         CASE 
-            WHEN COALESCE(ddp.demanda_promedio_diaria, 0) > 0 
+            WHEN COALESCE(ddp.demanda_promedio_diaria, 0.0) > 0.0
             THEN CAST(st.stock_actual AS double) / ddp.demanda_promedio_diaria 
             ELSE NULL 
         END AS dias_cobertura_estimados
