@@ -9,6 +9,7 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+from starlette.middleware.gzip import GZipMiddleware
 
 # ===================== Configuración desde .env =====================
 AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
@@ -24,28 +25,30 @@ def _normalize_prefix(p: str) -> str:
     return p.rstrip("/")
 
 API_PREFIX: str = _normalize_prefix(os.getenv("ANALITICO_BASE_PATH", "/analitico"))
+DOCS_URL = f"{API_PREFIX}/docs/" if API_PREFIX else "/docs/"
+OPENAPI_URL = f"{API_PREFIX}/openapi.json" if API_PREFIX else "/openapi.json"
 
 _cors = os.getenv("CORS_ORIGINS", "*")
 ALLOW_ORIGINS: List[str] = [o.strip() for o in _cors.split(",")] if _cors != "*" else ["*"]
 
 if not ATHENA_DB:
-    print("ADVERTENCIA: ATHENA_DB no está definido; las consultas fallarán.")
+    print("ADVERTENCIA: ATHENA_DB no está definido.")
 if not (ATHENA_OUTPUT.startswith("s3://") and ATHENA_OUTPUT.endswith("/")):
-    print(f"ADVERTENCIA: ATHENA_OUTPUT inválido ('{ATHENA_OUTPUT}'). Debe empezar con s3:// y terminar con /.")
+    print(f"ADVERTENCIA: ATHENA_OUTPUT inválido ('{ATHENA_OUTPUT}').")
 
-# ===================== Cliente Boto3 / Athena =====================
 boto_config = Config(retries={"max_attempts": 5, "mode": "adaptive"})
 session = boto3.Session(region_name=AWS_REGION)
 athena_client = session.client("athena", config=boto_config)
 
-# ===================== FastAPI (docs con barra final) =====================
 app = FastAPI(
     title="API Analítica PharmaTrack (Athena)",
     version="1.0.0",
-    docs_url=f"{API_PREFIX}/docs/" if API_PREFIX else "/docs/",   
+    docs_url=DOCS_URL,     
     redoc_url=None,
-    openapi_url=f"{API_PREFIX}/openapi.json" if API_PREFIX else "/openapi.json",
+    openapi_url=OPENAPI_URL,
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,
@@ -98,11 +101,15 @@ def run_athena_query(query: str, max_wait_seconds: int = 90):
         for page in pages:
             rs = page["ResultSet"]
             if first:
+                if 'ResultSetMetadata' not in rs:
+                    return []
                 cols = [c["Name"] for c in rs["ResultSetMetadata"]["ColumnInfo"]]
-                rows = rs.get("Rows", [])[1:]  
+                rows = rs.get("Rows", [])[1:]
                 first = False
             else:
                 rows = rs.get("Rows", [])
+            if not cols:
+                raise HTTPException(status_code=500, detail="Error procesando resultados: Faltan nombres de columna.")
             for r in rows:
                 values = [cell.get("VarCharValue") for cell in r.get("Data", [])]
                 if len(values) == len(cols):
@@ -112,10 +119,8 @@ def run_athena_query(query: str, max_wait_seconds: int = 90):
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code")
         msg = e.response.get("Error", {}).get("Message", str(e))
-        if code == "InvalidRequestException":
-            raise HTTPException(status_code=400, detail=f"InvalidRequest: {msg}")
-        if code == "AccessDeniedException":
-            raise HTTPException(status_code=403, detail=f"AccessDenied: {msg}")
+        if code == "InvalidRequestException": raise HTTPException(status_code=400, detail=f"InvalidRequest: {msg}")
+        if code == "AccessDeniedException": raise HTTPException(status_code=403, detail=f"AccessDenied: {msg}")
         raise HTTPException(status_code=500, detail=f"Error de AWS API: {code} - {msg}")
     except HTTPException:
         raise
@@ -141,16 +146,27 @@ else:
 async def healthz():
     return {"status": "ok"}
 
-@app.get(f"{API_PREFIX}/ping_athena", summary="Quick Athena ping", tags=["Health"])
+@app.get(f"{API_PREFIX}/ping_athena", summary="Prueba rápida de conexión con Athena", tags=["Health"])
 def ping_athena():
     return run_athena_query("SELECT 1 AS ok")
 
-# ===================== Vistas =====================
-@app.get(f"{API_PREFIX}/vista/stock_bajo", summary="Productos con Bajo Stock", tags=["Vistas"])
-async def get_vista_stock_bajo():
-    query = "SELECT * FROM vista_stock_bajo_reposicion ORDER BY cantidad_a_reponer DESC;"
-    res = run_athena_query(query)
-    for item in res:
+# ===================== Vistas (con paginación) =====================
+@app.get(f"{API_PREFIX}/vista/stock_bajo", summary="Productos con Bajo Stock (paginado)", tags=["Vistas"])
+async def get_vista_stock_bajo_paginado(
+    limit: int = Query(50, ge=1, le=500, description="Número de registros por página (1-500)"),
+    offset: int = Query(0, ge=0, description="Número de registros a saltar")
+):
+    """
+    Devuelve filas de 'vista_stock_bajo_reposicion' ordenadas por cantidad_a_reponer (desc),
+    aplicando LIMIT y OFFSET para evitar respuestas gigantes.
+    """
+    query = f"""
+        SELECT * FROM vista_stock_bajo_reposicion
+        ORDER BY cantidad_a_reponer DESC
+        LIMIT {limit} OFFSET {offset}
+    """
+    rows = run_athena_query(query)
+    for item in rows:
         for k in ("stock_actual", "umbral_reposicion", "cantidad_a_reponer"):
             v = item.get(k)
             if v is None:
@@ -162,28 +178,28 @@ async def get_vista_stock_bajo():
                     item[k] = float(v)
                 except (ValueError, TypeError):
                     pass
-    return res
+    return rows
 
 @app.get(f"{API_PREFIX}/vista/productos_mas_recetados", summary="Top Productos Más Recetados", tags=["Vistas"])
 async def get_vista_productos_mas_recetados(
     limit: int = Query(10, ge=1, le=200, description="Número de productos a retornar (1-200)")
 ):
-    query = f"SELECT * FROM vista_productos_mas_recetados LIMIT {limit};"
-    res = run_athena_query(query)
-    for item in res:
+    query = f"SELECT * FROM vista_productos_mas_recetados LIMIT {limit}"
+    rows = run_athena_query(query)
+    for item in rows:
         v = item.get("total_recetado")
         try:
             item["total_recetado"] = int(v) if v is not None else 0
         except (ValueError, TypeError):
             pass
-    return res
+    return rows
 
 # ===================== KPIs =====================
 @app.get(f"{API_PREFIX}/kpi/stockout", summary="Alerta de Quiebre de Stock", tags=["KPIs"])
 async def kpi_stockout(distrito: Optional[str] = Query(None, description="Filtrar por distrito (texto simple)")):
     where = ""
     if distrito:
-        if re.fullmatch(r"^[a-zA-Z0-9_ ]+$", distrito):
+        if re.fullmatch(r"^[a-zA-Z0-9_ \-]+$", distrito):
             distrito_esc = distrito.replace("'", "''")
             where = f"WHERE s.distrito = '{distrito_esc}'"
         else:
@@ -247,21 +263,13 @@ async def kpi_cobertura():
     """
     res = run_athena_query(query)
     for item in res:
-        try:
-            item["id_sucursal"] = int(item.get("id_sucursal") or 0)
-        except (ValueError, TypeError):
-            item["id_sucursal"] = 0
-        try:
-            item["stock_actual"] = int(item.get("stock_actual") or 0)
-        except (ValueError, TypeError):
-            item["stock_actual"] = 0
-        try:
-            item["demanda_promedio_diaria"] = float(item.get("demanda_promedio_diaria") or 0.0)
-        except (ValueError, TypeError):
-            item["demanda_promedio_diaria"] = 0.0
+        try: item["id_sucursal"] = int(item.get("id_sucursal") or 0)
+        except (ValueError, TypeError): item["id_sucursal"] = 0
+        try: item["stock_actual"] = int(item.get("stock_actual") or 0)
+        except (ValueError, TypeError): item["stock_actual"] = 0
+        try: item["demanda_promedio_diaria"] = float(item.get("demanda_promedio_diaria") or 0.0)
+        except (ValueError, TypeError): item["demanda_promedio_diaria"] = 0.0
         v = item.get("dias_cobertura_estimados")
-        try:
-            item["dias_cobertura_estimados"] = float(v) if v is not None else None
-        except (ValueError, TypeError):
-            item["dias_cobertura_estimados"] = None
+        try: item["dias_cobertura_estimados"] = float(v) if v is not None else None
+        except (ValueError, TypeError): item["dias_cobertura_estimados"] = None
     return res
