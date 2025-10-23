@@ -1,6 +1,4 @@
-﻿version: "3.9"
-
-services:
+﻿services:
   catalogo:
     build: ./catalogo
     container_name: catalogo-api
@@ -92,18 +90,21 @@ services:
     restart: unless-stopped
 
   analitico: 
-    build: ./analitico 
+    build: ./analitico
     container_name: analitico-api
     ports:
-      - "${ANALITICO_PORT:-8086}:8000" 
+      - "${ANALITICO_PORT:-8086}:8086" 
     environment:
       AWS_REGION: ${AWS_REGION}
       ATHENA_DB: ${ATHENA_DB}
       ATHENA_OUTPUT: ${ATHENA_OUTPUT}
-      ANALITICO_BASE_PATH: ${ANALITICO_BASE_PATH} 
+      ANALITICO_BASE_PATH: ${ANALITICO_BASE_PATH}
       CORS_ORIGINS: ${CORS_ORIGINS}
+    volumes:
+      - ~/.aws:/root/.aws:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000${ANALITICO_BASE_PATH}/healthz || exit 1"]
+
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8086${ANALITICO_BASE_PATH}/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
