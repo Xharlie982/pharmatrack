@@ -2,6 +2,7 @@
 import time
 import uuid
 from typing import List, Dict, Any, Optional
+import re 
 
 import boto3
 from botocore.config import Config
@@ -10,10 +11,10 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Query, Request, APIRouter 
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+
 from fastapi.openapi.utils import get_openapi
 
 # ===================== Config =====================
-
 AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
 ATHENA_DB: str = os.getenv("ATHENA_DB", "pharmatrack_analytics_db") 
 ATHENA_OUTPUT: str = os.getenv("ATHENA_OUTPUT", "s3://default-bucket/") 
@@ -28,6 +29,8 @@ def _normalize_prefix(p: str) -> str:
 
 API_PREFIX: str = _normalize_prefix(_raw_prefix) 
 
+FULL_DOCS_URL = f"{API_PREFIX}/docs" if API_PREFIX else "/docs"
+
 _cors = os.getenv("CORS_ORIGINS", "*")
 ALLOW_ORIGINS: List[str] = [o.strip() for o in _cors.split(",")] if _cors != "*" else ["*"]
 
@@ -35,7 +38,6 @@ if not ATHENA_OUTPUT or not ATHENA_OUTPUT.startswith("s3://") or not ATHENA_OUTP
     print(f"¡ADVERTENCIA CRÍTICA! ATHENA_OUTPUT ('{ATHENA_OUTPUT}') no es válido. Debe empezar con s3:// y terminar con /. Las consultas fallarán.")
 
 # --- Cliente Boto3 ---
-
 boto_config = Config(
     retries={
         'max_attempts': 5,
@@ -58,14 +60,16 @@ app = FastAPI(
 
 # --- Creamos un Router con el Prefijo ---
 
-router = APIRouter(prefix=API_PREFIX) 
+router = APIRouter(
+    prefix=API_PREFIX, 
+    tags=["Analíticas"] 
+) 
 
-# ---- Configuración para Ocultar "Servers" en Swagger ----
+# ---- Opcional: Configuración para Ocultar "Servers" en Swagger ----
 
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
-
     openapi_schema = get_openapi(
         title=app.title,
         version=app.version,
@@ -75,8 +79,7 @@ def custom_openapi():
     openapi_schema.pop("servers", None) 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
-
-app.openapi = custom_openapi
+ 
 # --------------------------------------------------------
 
 app.add_middleware(
@@ -200,22 +203,20 @@ def run_athena_query(query: str, max_wait_seconds: int = 90):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor al procesar la consulta: {str(e)}")
 
 
-# ===================== Rutas API (Ahora en el Router) =====================
+# ===================== Rutas API (Definidas en el Router) =====================
 
 @router.get("/", include_in_schema=False) 
 async def router_root_redirect():
 
-    redirect_url = "/docs" 
-    print(f"Redirigiendo desde '{API_PREFIX}/' a '{API_PREFIX}{redirect_url}'")
-
-    return RedirectResponse(url=redirect_url, status_code=307)
+    print(f"Redirigiendo desde '{API_PREFIX}/' a la URL de /docs configurada en app")
+    return RedirectResponse(url=app.docs_url, status_code=307)
 
 @router.get("/healthz", summary="Health Check", tags=["Health"])
 async def healthz():
     """Endpoint simple para verificar que la API está respondiendo."""
     return {"status": "ok"}
 
-# --- Endpoints basados en Vistas ---
+# --- Endpoints basados en Vistas (viven bajo /analitico/vista/...) ---
 
 @router.get("/vista/stock_bajo", summary="Productos con Bajo Stock", tags=["Vistas"]) 
 async def get_vista_stock_bajo():
@@ -226,6 +227,7 @@ async def get_vista_stock_bajo():
     query = 'SELECT * FROM vista_stock_bajo_reposicion ORDER BY cantidad_a_reponer DESC;'
     try:
         results = run_athena_query(query)
+
         for item in results:
             for key in ['stock_actual', 'umbral_reposicion', 'cantidad_a_reponer']:
                 if item.get(key) is not None:
@@ -241,8 +243,7 @@ async def get_vista_stock_bajo():
 
 @router.get("/vista/productos_mas_recetados", summary="Top Productos Más Recetados", tags=["Vistas"])
 async def get_vista_productos_mas_recetados(
-
-    limit: int = Query(10, ge=1, le=200, description="Número de productos a retornar (1-200)") 
+    limit: int = Query(10, ge=1, le=200, description="Número de productos a retornar (1-200)") # Límite 200
 ):
     """
     Consulta la vista 'vista_productos_mas_recetados' para obtener los N
@@ -263,7 +264,7 @@ async def get_vista_productos_mas_recetados(
         raise HTTPException(status_code=500, detail="Error interno procesando top productos recetados.")
 
 
-# --- Endpoints basados en Consultas Directas (KPIs) ---
+# --- Endpoints basados en Consultas Directas (KPIs - viven bajo /analitico/kpi/...) ---
 
 @router.get("/kpi/stockout", summary="Alerta de Quiebre de Stock", tags=["KPIs"]) 
 async def kpi_stockout(
@@ -275,10 +276,8 @@ async def kpi_stockout(
     """
     where_clauses = []
     if distrito:
-        import re
 
         if re.fullmatch(r"^[a-zA-Z0-9_ ]+$", distrito):
-
              distrito_escaped = distrito.replace("'", "''") 
              where_clauses.append(f"s.distrito = '{distrito_escaped}'") 
         else:
@@ -313,10 +312,8 @@ async def kpi_stockout(
         results = run_athena_query(query)
         for item in results:
             for key in ['stock_total_distrito', 'umbral_reposicion']:
-
                  value = item.get(key)
                  item[key] = int(value) if value is not None else 0
-
             item['en_alerta'] = item.get('en_alerta', 'false').lower() == 'true' 
         return results
     except HTTPException as e: raise e
@@ -372,7 +369,6 @@ async def kpi_cobertura():
     """
     try:
         results = run_athena_query(query)
-
         for item in results:
             item['id_sucursal'] = int(item.get('id_sucursal') or 0)
             item['stock_actual'] = int(item.get('stock_actual') or 0)
@@ -388,6 +384,4 @@ async def kpi_cobertura():
         print(f"Error inesperado en endpoint /kpi/cobertura: {e}")
         raise HTTPException(status_code=500, detail="Error interno procesando cobertura de stock.")
 
-
-# --- Incluir el Router en la App Principal ---
 app.include_router(router)
