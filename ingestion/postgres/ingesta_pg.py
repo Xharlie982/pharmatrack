@@ -48,10 +48,9 @@ def run_ingestion():
                 continue
 
             nombre_archivo = f"{tabla}.csv"
-            # Crear directorio temporal si no existe
             os.makedirs("/tmp/ingesta_data", exist_ok=True)
             path_local = f"/tmp/ingesta_data/{nombre_archivo}"
-            ruta_s3 = f"raw/inventario/{fecha_hoy}/{nombre_archivo}"
+            ruta_s3 = f"raw/inventario/{tabla}/{fecha_hoy}/{nombre_archivo}"
 
             df.to_csv(path_local, index=False)
             print(f"Archivo '{path_local}' creado con {len(df)} filas.")
@@ -65,12 +64,12 @@ def run_ingestion():
         except Exception as e:
             print(f"Error procesando la tabla '{tabla}': {e}")
         finally:
-             # Limpiar archivo temporal si existe incluso si hubo error
+
             if 'path_local' in locals() and os.path.exists(path_local):
                  try:
                      os.remove(path_local)
                  except OSError:
-                     pass # Ignorar error si no se puede borrar
+                     pass 
 
     if conn:
         conn.close()

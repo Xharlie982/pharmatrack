@@ -82,7 +82,7 @@ def run_ingestion():
             nombre_archivo = f"{tabla}.csv"
             os.makedirs("/tmp/ingesta_data", exist_ok=True)
             path_local = f"/tmp/ingesta_data/{nombre_archivo}"
-            ruta_s3 = f"raw/recetas/{fecha_hoy}/{nombre_archivo}"
+            ruta_s3 = f"raw/recetas/{tabla}/{fecha_hoy}/{nombre_archivo}"
 
             df.to_csv(path_local, index=False)
             print(f"Archivo '{path_local}' creado con {len(df)} filas.")

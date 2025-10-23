@@ -69,7 +69,7 @@ def run_ingestion():
             nombre_archivo = f"{coleccion_nombre}.jsonl"
             os.makedirs("/tmp/ingesta_data", exist_ok=True)
             path_local = f"/tmp/ingesta_data/{nombre_archivo}"
-            ruta_s3 = f"raw/catalogo/{fecha_hoy}/{nombre_archivo}"
+            ruta_s3 = f"raw/catalogo/{coleccion_nombre}/{fecha_hoy}/{nombre_archivo}"
 
             with open(path_local, 'w') as f:
                 for doc in documentos:
