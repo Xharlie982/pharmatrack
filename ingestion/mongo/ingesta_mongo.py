@@ -87,7 +87,7 @@ def run_ingestion():
         except Exception as e:
             print(f"Error procesando la colección '{coleccion_nombre}': {e}")
         finally:
-            if cursor and not cursor.closed:
+            if cursor and not cursor.alive:
                 cursor.close()
             if path_local and os.path.exists(path_local):
                  try:
